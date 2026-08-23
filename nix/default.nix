@@ -2,7 +2,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
-  fetchFromGitLab,
+  fetchgit,
   pkg-config,
   meson,
   ninja,
@@ -17,9 +17,8 @@
   pixman
 }:
 let
-  wlrootsSrc = fetchFromGitLab {
-    owner = "wlroots";
-    repo = "wlroots";
+  wlrootsSrc = fetchgit {
+    url = "https://gitlab.freedesktop.org/wlroots/wlroots.git";
     rev = "0.20.2";
     hash = "";
     fetchSubmodules = false;
