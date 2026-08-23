@@ -9,7 +9,6 @@
   wayland,
   wayland-protocols,
   wayland-scanner,
-  wlroots_0_20,
   xwayland,
   libxkbcommon,
   libxcb-wm,
@@ -30,14 +29,26 @@
   hwdata
 }:
 let
-  wlrootsSrc = fetchgit {
+  wlrgit = fetchgit {
     url = "https://gitlab.freedesktop.org/wlroots/wlroots.git";
     rev = "0.20.2";
     hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
     fetchSubmodules = false;
   };
-in
 
+  patchedWlr = stdenv.mkDerivation {
+    pname = "wlroots";
+    version = "0.20.2";
+
+    src = wlrgit;
+
+    patches = [
+      ../subprojects/packagefiles/wlroots-rounded.patch
+    ];
+
+    phases = [ "unpackPhase" "patchPhase" ];
+  };
+in
 stdenv.mkDerivation {
     pname = "leme";
     version = "git";
@@ -59,7 +70,7 @@ stdenv.mkDerivation {
     buildInputs = [
       wayland
       wayland-protocols
-      wlroots_0_20
+      patchedWlr
       xwayland
       libxkbcommon
       libxcb-wm
@@ -79,14 +90,6 @@ stdenv.mkDerivation {
       seatd
       hwdata
     ];
-
-    preConfigure = ''
-      mkdir -p subprojects/wlroots
-      cp -r ${wlrootsSrc}/* subprojects/wlroots/
-      chmod -R u+w subprojects/wlroots
-      patch -d subprojects/wlroots -p1 \
-        < subprojects/packagefiles/wlroots-rounded.patch
-    '';
 
     mesonFlags = [
       "-Deffects=true"
