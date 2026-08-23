@@ -20,7 +20,7 @@ let
   wlrootsSrc = fetchgit {
     url = "https://gitlab.freedesktop.org/wlroots/wlroots.git";
     rev = "0.20.2";
-    hash = "";
+    hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
     fetchSubmodules = false;
   };
 in
