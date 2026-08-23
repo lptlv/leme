@@ -1,4 +1,5 @@
 {
+  self,
   config,
   lib,
   pkgs,
@@ -21,7 +22,7 @@ in
       };
       package = lib.mkOption {
         type = lib.types.package;
-        default = pkgs.leme;
+        default = self.packages.${pkgs.stdenv.hostPlatform.system}.leme;
         description = "The leme package to use";
       };
     };
