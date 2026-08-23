@@ -95,6 +95,12 @@ stdenv.mkDerivation {
       hwdata
     ];
 
+    preConfigure = ''
+      mkdir -p subprojects/wlroots
+      cp -r ${patchedWlr}/* subprojects/wlroots/
+      chmod -R u+w subprojects/wlroots
+    '';
+
     mesonFlags = [
       "-Deffects=true"
       "-Ddefault_library=shared"
