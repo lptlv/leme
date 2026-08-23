@@ -45,6 +45,7 @@ stdenv.mkDerivation {
 
     mesonFlags = [
       "-Ddefault_library=shared"
+      "-Deffects=true"
     ];
 
     passthru = {
