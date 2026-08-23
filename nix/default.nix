@@ -47,6 +47,10 @@ let
     ];
 
     phases = [ "unpackPhase" "patchPhase" "installPhase" ];
+
+    installPhase = ''
+      cp -a . $out
+    '';
   };
 in
 stdenv.mkDerivation {
