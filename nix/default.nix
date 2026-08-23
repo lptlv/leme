@@ -45,8 +45,6 @@ let
     patches = [
       ../subprojects/packagefiles/wlroots-rounded.patch
     ];
-
-    phases = [ "unpackPhase" "patchPhase" ];
   };
 in
 stdenv.mkDerivation {
