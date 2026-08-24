@@ -46,6 +46,8 @@ stdenv.mkDerivation {
         name = "source";
     };
 
+  patches = [ ../subprojects/packagefiles/wlroots-rounded.patch ];
+
   postPatch = ''
     mkdir subprojects/wlroots
     cp -r ${wlrootsSrc}/* subprojects/wlroots
