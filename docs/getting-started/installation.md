@@ -53,6 +53,10 @@ leme --version
 
 Read [minimal configuration](minimal-config.md) before copying a config file. Read [first session](first-session.md) before selecting Leme from a display manager or launching it from a TTY.
 
+## Nixos
+
+See [Nixos Install](nixos.md).
+
 ## Visual effects
 
 Some appearance settings need more than the scene graph a stock wlroots
