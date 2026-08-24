@@ -39,7 +39,7 @@ let
       rev = "0.20.2";
       hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
     };
-    patches = [ "${src}/subprojects/packagefiles/wlroots-rounded.patch" ];
+    patches = [ "../subprojects/packagefiles/wlroots-rounded.patch" ];
   };
 in
 stdenv.mkDerivation {
