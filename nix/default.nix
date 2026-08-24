@@ -2,7 +2,7 @@
   lib,
   stdenv,
   fetchFromGitHub,
-  fetchgit,
+  fetchFromGitLab,
   pkg-config,
   meson,
   ninja,
@@ -29,52 +29,43 @@
   hwdata
 }:
 let
-  wlrgit = fetchgit {
-    url = "https://gitlab.freedesktop.org/wlroots/wlroots.git";
+  wlrootsSrc = fetchFromGitLab {
+    domain = "gitlab.freedesktop.org";
+    owner = "wlroots";
+    repo = "wlroots";
     rev = "0.20.2";
     hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
-    fetchSubmodules = false;
-  };
-
-  patchedWlr = stdenv.mkDerivation {
-    pname = "wlroots";
-    version = "0.20.2";
-
-    src = wlrgit;
-
-    patches = [
-      ../subprojects/packagefiles/wlroots-rounded.patch
-    ];
-
-    phases = [ "unpackPhase" "patchPhase" "installPhase" ];
-
-    installPhase = ''
-      cp -a . $out
-    '';
   };
 in
 stdenv.mkDerivation {
-    pname = "leme";
-    version = "git";
+  pname = "leme";
+  version = "git";
 
-    src = fetchFromGitHub {
-        owner = "ernestoCruz05";
-        repo = "leme";
-        rev = "main";
-        hash = "sha256-Mzv1KjyipN0P+ZTj9YirRV2f0+MdG7cvuxoYZZaDstY=";
-    };
+  src = fetchFromGitHub {
+    owner = "ernestoCruz05";
+    repo = "leme";
+    rev = "c15ed474af9dd6d5ac9d880299cdfba79aa2137d";
+    hash = "sha256-Mzv1KjyipN0P+ZTj9YirRV2f0+MdG7cvuxoYZZaDstY=";
+  };
 
-    nativeBuildInputs = [
-      wayland-scanner
-      pkg-config
-      meson
-      ninja
-    ];
+  postPatch = ''
+    cp -r ${wlrootsSrc} subprojects/wlroots
+    chmod -R u+w subprojects/wlroots
+    patch -d subprojects/wlroots -p1 \
+      < subprojects/packagefiles/wlroots-rounded.patch
+  '';
 
-    buildInputs = [
+  nativeBuildInputs = [
+     wayland-scanner
+     pkg-config
+     meson
+     ninja
+  ];
+
+  buildInputs = [
       wayland
       wayland-protocols
-      patchedWlr
+      wlrootsSrc
       xwayland
       libxkbcommon
       libxcb-wm
@@ -93,27 +84,11 @@ stdenv.mkDerivation {
       lcms2
       seatd
       hwdata
-    ];
+  ];
 
-    preConfigure = ''
-      mkdir -p subprojects/wlroots
-      cp -r ${patchedWlr}/* subprojects/wlroots/
-      chmod -R u+w subprojects/wlroots
-    '';
+  mesonFlags = [
+    "-Deffects=true"
+  ];
 
-    mesonFlags = [
-      "-Deffects=true"
-      "-Ddefault_library=shared"
-    ];
-
-    passthru = {
-        providedSessions = [ "leme" ];
-    };
-
-    meta = with lib; {
-        description = "Leme, kinda sounds like Lemm from Hollow Knight.";
-        homepage = "https://github.com/ernestoCruz05/leme";
-        license = licenses.gpl3;
-        platforms = platforms.linux;
-    };
+  passthru.providedSessions = [ "leme" ];
 }
