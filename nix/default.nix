@@ -30,16 +30,12 @@
   hwdata
 }:
 let
-  wlrootsSrc = applyPatches rec {
-    name = "wlroots-0.20.2-rounded";
-    src = fetchFromGitLab {
-      domain = "gitlab.freedesktop.org";
-      owner = "wlroots";
-      repo = "wlroots";
-      rev = "0.20.2";
-      hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
-    };
-    patches = [ "../subprojects/packagefiles/wlroots-rounded.patch" ];
+  wlrootsSrc = fetchFromGitLab {
+    domain = "gitlab.freedesktop.org";
+    owner = "wlroots";
+    repo = "wlroots";
+    rev = "0.20.2";
+    hash = "sha256-VdYymvzYp6/R255AK20j4xTd+JbCZgNiRfgeRJD+UZY=";
   };
 in
 stdenv.mkDerivation {
