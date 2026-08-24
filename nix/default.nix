@@ -31,7 +31,7 @@
 let
   wlrootsSrc = applyPatches {
     name = "wlroots-0.20.2-rounded";
-    fetchFromGitLab {
+    src = fetchFromGitLab {
       domain = "gitlab.freedesktop.org";
       owner = "wlroots";
       repo = "wlroots";
