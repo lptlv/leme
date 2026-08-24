@@ -1,7 +1,6 @@
 {
   lib,
   stdenv,
-  applyPatches,
   fetchFromGitHub,
   fetchFromGitLab,
   pkg-config,
