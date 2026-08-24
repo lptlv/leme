@@ -109,7 +109,8 @@ enum leme_window_rule_field {
 };
 
 struct leme_window_rule {
-    char *identity;
+    char **identities;
+    size_t identity_count;
     char *title;
     uint32_t fields;
     uint16_t tag_id;

@@ -482,29 +482,54 @@ leme_config_parse_scratchpad(struct leme_config *config,
     return true;
 }
 
+static void
+leme_config_free_window_identities(char **identities, size_t count)
+{
+    size_t index;
+
+    for (index = 0; index < count; index++) {
+        free(identities[index]);
+    }
+    free(identities);
+}
+
 static bool
 leme_config_parse_window_rule(struct leme_config *config,
     const struct leme_scfg_directive *directive, const char *path, char **error)
 {
     struct leme_window_rule *rules;
     struct leme_window_rule *rule;
-    char *identity;
+    char **identities;
     size_t index;
 
-    if (directive->params_len != 1) {
+    if (directive->params_len == 0) {
         return leme_config_reject(config, directive->lineno,
-            "window requires one application identity");
+            "window requires at least one application identity");
     }
-    identity = strdup(directive->params[0]);
-    if (identity == NULL) {
+    if (directive->params_len > SIZE_MAX / sizeof(*identities)) {
+        leme_config_set_error(error, "%s:%d: too many window identities",
+            path, directive->lineno);
+        return false;
+    }
+    identities = calloc(directive->params_len, sizeof(*identities));
+    if (identities == NULL) {
         leme_config_set_error(error, "%s:%d: out of memory",
             path, directive->lineno);
         return false;
     }
+    for (index = 0; index < directive->params_len; index++) {
+        identities[index] = strdup(directive->params[index]);
+        if (identities[index] == NULL) {
+            leme_config_free_window_identities(identities, index);
+            leme_config_set_error(error, "%s:%d: out of memory",
+                path, directive->lineno);
+            return false;
+        }
+    }
     rules = realloc(config->window_rules,
         (config->window_rule_count + 1) * sizeof(*rules));
     if (rules == NULL) {
-        free(identity);
+        leme_config_free_window_identities(identities, directive->params_len);
         leme_config_set_error(error, "%s:%d: out of memory",
             path, directive->lineno);
         return false;
@@ -512,7 +537,8 @@ leme_config_parse_window_rule(struct leme_config *config,
     config->window_rules = rules;
     rule = &config->window_rules[config->window_rule_count];
     *rule = (struct leme_window_rule){
-        .identity = identity,
+        .identities = identities,
+        .identity_count = directive->params_len,
     };
     config->window_rule_count++;
 

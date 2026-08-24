@@ -130,6 +130,7 @@ leme_config_destroy(struct leme_config *config)
 {
     size_t mode_index;
     size_t binding_index;
+    size_t identity_index;
     size_t index;
 
     if (config == NULL) {
@@ -150,7 +151,12 @@ leme_config_destroy(struct leme_config *config)
     }
     free(config->tag_rules);
     for (index = 0; index < config->window_rule_count; index++) {
-        free(config->window_rules[index].identity);
+        for (identity_index = 0;
+                identity_index < config->window_rules[index].identity_count;
+                identity_index++) {
+            free(config->window_rules[index].identities[identity_index]);
+        }
+        free(config->window_rules[index].identities);
         free(config->window_rules[index].title);
         free(config->window_rules[index].output);
     }

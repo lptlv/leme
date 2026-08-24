@@ -7,11 +7,27 @@
 #include <string.h>
 
 static bool
+leme_window_rule_identity_matches(const struct leme_window_rule *rule,
+    const char *identity)
+{
+    size_t index;
+
+    for (index = 0; index < rule->identity_count; index++) {
+        const char *pattern = rule->identities[index];
+
+        if (strcmp(pattern, "*") == 0 ||
+                (identity != NULL && fnmatch(pattern, identity, 0) == 0)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
 leme_window_rule_matches(const struct leme_window_rule *rule,
     const char *identity, const char *title)
 {
-    if (strcmp(rule->identity, "*") != 0 &&
-            (identity == NULL || strcmp(rule->identity, identity) != 0)) {
+    if (!leme_window_rule_identity_matches(rule, identity)) {
         return false;
     }
     if (rule->title != NULL &&

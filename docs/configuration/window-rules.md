@@ -1,6 +1,6 @@
 # Window rules
 
-A `window` block matches a native Wayland `app_id` or an X11 class. Matching is exact and case-sensitive. `*` matches any application.
+A `window` block matches a native Wayland `app_id` or an X11 class using `fnmatch(3)` pattern matching. Pattern matching is case-sensitive. The wildcard `*` matches any window.
 
 ```scfg
 window "firefox" {
@@ -9,6 +9,14 @@ window "firefox" {
 
 window "steam" {
     tag 5
+    floating true
+}
+
+window "steam_app_*" {
+    tag 7
+}
+
+window "app1" "app2" {
     floating true
 }
 
@@ -23,7 +31,7 @@ window "*" {
 
 | Item | Values | Applied |
 | --- | --- | --- |
-| block argument | `app_id`, X11 `class`, or `*` | selects the application |
+| block argument | one or more `fnmatch(3)` patterns for `app_id`, X11 `class`, or `*` | selects the application |
 | `title` | `fnmatch(3)` glob with `*`, `?`, and bracket expressions | selects the title |
 | `tag` | integer from `1` through the output maximum | once, when the window opens |
 | `floating` | `true` or `false` | once, when the window opens |
@@ -31,7 +39,13 @@ window "*" {
 | `output` | connector name such as `DP-1` | once, when the window opens |
 | `opacity` | decimal from `0.0` through `1.0` | continuously |
 
-Both criteria must match. A block without `title` matches the application alone. A block with `*` as its argument matches the title alone. A missing protocol title cannot satisfy a title criterion.
+A `window` block accepts one or more identity patterns as arguments. When multiple arguments are given, the rule matches if any pattern matches the window's `app_id` or X11 class (OR logic). Pattern matching uses `fnmatch(3)`, supporting `*` (any string), `?` (any single character), and bracket expressions like `[0-9]`.
+
+Punctuation inside an argument is not a delimiter. For example, `"app1;app2"` is treated as a single pattern searching for a literal semicolon. Use separate quoted arguments such as `"app1" "app2"` to specify alternatives.
+
+The special wildcard `"*"` matches every window, including windows that do not report an `app_id` or X11 class. Any other pattern (including globs like `*term*`) requires the window to report an identity before evaluating the match.
+
+If a block includes a `title` directive, both the identity criterion and the title criterion must match (AND logic). A block without `title` matches on identity alone. A block with `"*"` as its argument matches on `title` alone. A missing protocol title cannot satisfy a title criterion.
 
 Every matching rule is applied in file order. For each key, the last matching rule that sets it wins. A wildcard block can provide a baseline for later rules to override.
 

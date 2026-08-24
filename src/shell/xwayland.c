@@ -115,7 +115,21 @@ leme_xwayland_initial_floating(struct wlr_xwayland_surface *surface)
         wlr_xwayland_surface_has_window_type(surface,
             WLR_XWAYLAND_NET_WM_WINDOW_TYPE_SPLASH) ||
         wlr_xwayland_surface_has_window_type(surface,
-            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLBAR);
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLBAR) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_NOTIFICATION) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_POPUP_MENU) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_DROPDOWN_MENU) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_MENU) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_TOOLTIP) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_COMBO) ||
+        wlr_xwayland_surface_has_window_type(surface,
+            WLR_XWAYLAND_NET_WM_WINDOW_TYPE_DND);
 }
 
 static void
