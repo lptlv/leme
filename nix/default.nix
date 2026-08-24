@@ -30,7 +30,7 @@
   hwdata
 }:
 let
-  wlrootsSrc = applyPatches {
+  wlrootsSrc = applyPatches rec {
     name = "wlroots-0.20.2-rounded";
     src = fetchFromGitLab {
       domain = "gitlab.freedesktop.org";
