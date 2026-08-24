@@ -47,7 +47,8 @@ stdenv.mkDerivation {
     };
 
   postPatch = ''
-    cp -r ${wlrootsSrc} subprojects/wlroots
+    mkdir subprojects/wlroots
+    cp -r ${wlrootsSrc}/* subprojects/wlroots
     chmod -R u+w subprojects/wlroots
     patch -d subprojects/wlroots -p1 \
       < subprojects/packagefiles/wlroots-rounded.patch
