@@ -41,12 +41,10 @@ stdenv.mkDerivation {
   pname = "leme";
   version = "git";
 
-  src = fetchFromGitHub {
-    owner = "ernestoCruz05";
-    repo = "leme";
-    rev = "c15ed474af9dd6d5ac9d880299cdfba79aa2137d";
-    hash = "sha256-Mzv1KjyipN0P+ZTj9YirRV2f0+MdG7cvuxoYZZaDstY=";
-  };
+  src = builtins.path {
+        path = ../.;
+        name = "source";
+    };
 
   postPatch = ''
     cp -r ${wlrootsSrc} subprojects/wlroots
