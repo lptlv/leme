@@ -86,7 +86,6 @@ leme_render_layer_configure(struct leme_layer_surface *layer,
         layer->scene_layer_surface, &full_box, &usable_box);
     wl_list_for_each(popup, &layer->popups, link) {
         leme_render_layer_popup_unconstrain(popup, full);
-        leme_render_layer_popup_update(popup);
     }
     *usable = (struct leme_box){
         .x = usable_box.x,
@@ -99,39 +98,32 @@ leme_render_layer_configure(struct leme_layer_surface *layer,
 bool
 leme_render_layer_popup_create(struct leme_layer_popup *popup)
 {
+    struct wlr_xdg_surface *parent;
+    struct wlr_scene_tree *parent_tree;
+
     if (popup->layer->scene_layer_surface == NULL) {
         return false;
     }
+    parent = wlr_xdg_surface_try_from_wlr_surface(popup->wlr_popup->parent);
+    parent_tree = parent == NULL ?
+        popup->layer->scene_layer_surface->tree : parent->data;
+    if (parent_tree == NULL) {
+        return false;
+    }
     popup->scene_tree = wlr_scene_xdg_surface_create(
-        popup->layer->scene_layer_surface->tree, popup->wlr_popup->base);
+        parent_tree, popup->wlr_popup->base);
     if (popup->scene_tree == NULL) {
         return false;
     }
-    leme_render_layer_popup_update(popup);
+    popup->wlr_popup->base->data = popup->scene_tree;
     leme_session_refresh_idle_inhibitors(popup->layer->server);
     return true;
 }
 
 void
-leme_render_layer_popup_update(struct leme_layer_popup *popup)
-{
-    double popup_x;
-    double popup_y;
-    int layer_x;
-    int layer_y;
-
-    if (popup->scene_tree == NULL) {
-        return;
-    }
-    wlr_xdg_popup_get_position(popup->wlr_popup, &popup_x, &popup_y);
-    wlr_xdg_popup_get_toplevel_coords(popup->wlr_popup,
-        (int)popup_x, (int)popup_y, &layer_x, &layer_y);
-    wlr_scene_node_set_position(&popup->scene_tree->node, layer_x, layer_y);
-}
-
-void
 leme_render_layer_popup_destroy(struct leme_layer_popup *popup)
 {
+    popup->wlr_popup->base->data = NULL;
     if (popup->scene_tree != NULL) {
         wlr_scene_node_destroy(&popup->scene_tree->node);
         popup->scene_tree = NULL;

@@ -36,6 +36,8 @@ struct leme_layer_popup {
     struct wlr_scene_tree *scene_tree;
     struct wl_list link;
     struct wl_listener commit;
+    struct wl_listener reposition;
+    struct wl_listener new_popup;
     struct wl_listener destroy;
 };
 

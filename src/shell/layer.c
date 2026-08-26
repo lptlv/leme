@@ -128,9 +128,12 @@ leme_layer_handle_commit(struct wl_listener *listener, void *data)
     bool was_focused = layer->server->focused_layer == layer;
 
     (void)data;
-    leme_render_layer_update_tree(layer);
     leme_session_refresh_idle_inhibitors(layer->server);
-    leme_layer_arrange(layer->server);
+    if (layer->wlr_layer_surface->initial_commit ||
+            layer->wlr_layer_surface->current.committed != 0) {
+        leme_render_layer_update_tree(layer);
+        leme_layer_arrange(layer->server);
+    }
     if (layer->mapped &&
             layer->wlr_layer_surface->current.keyboard_interactive ==
             ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
@@ -178,6 +181,18 @@ leme_layer_full_box(const struct leme_layer_surface *layer)
 }
 
 static void
+leme_layer_popup_finish(struct leme_layer_popup *popup)
+{
+    leme_render_layer_popup_destroy(popup);
+    wl_list_remove(&popup->commit.link);
+    wl_list_remove(&popup->reposition.link);
+    wl_list_remove(&popup->new_popup.link);
+    wl_list_remove(&popup->destroy.link);
+    wl_list_remove(&popup->link);
+    free(popup);
+}
+
+static void
 leme_layer_popup_handle_commit(struct wl_listener *listener, void *data)
 {
     struct leme_layer_popup *popup =
@@ -185,9 +200,21 @@ leme_layer_popup_handle_commit(struct wl_listener *listener, void *data)
 
     (void)data;
     leme_session_refresh_idle_inhibitors(popup->layer->server);
+    if (popup->wlr_popup->base->initial_commit) {
+        leme_render_layer_popup_unconstrain(
+            popup, leme_layer_full_box(popup->layer));
+    }
+}
+
+static void
+leme_layer_popup_handle_reposition(struct wl_listener *listener, void *data)
+{
+    struct leme_layer_popup *popup =
+        wl_container_of(listener, popup, reposition);
+
+    (void)data;
     leme_render_layer_popup_unconstrain(
         popup, leme_layer_full_box(popup->layer));
-    leme_render_layer_popup_update(popup);
 }
 
 static void
@@ -197,11 +224,22 @@ leme_layer_popup_handle_destroy(struct wl_listener *listener, void *data)
         wl_container_of(listener, popup, destroy);
 
     (void)data;
-    leme_render_layer_popup_destroy(popup);
-    wl_list_remove(&popup->commit.link);
-    wl_list_remove(&popup->destroy.link);
-    wl_list_remove(&popup->link);
-    free(popup);
+    leme_layer_popup_finish(popup);
+}
+
+static bool leme_layer_popup_create(struct leme_layer_surface *layer,
+    struct wlr_xdg_popup *wlr_popup);
+
+static void
+leme_layer_popup_handle_new_popup(struct wl_listener *listener, void *data)
+{
+    struct leme_layer_popup *parent =
+        wl_container_of(listener, parent, new_popup);
+    struct wlr_xdg_popup *popup = data;
+
+    if (!leme_layer_popup_create(parent->layer, popup)) {
+        wlr_log(WLR_ERROR, "%s", "leme: failed to create nested layer popup");
+    }
 }
 
 static bool
@@ -211,12 +249,17 @@ leme_layer_popup_create(struct leme_layer_surface *layer,
     struct leme_layer_popup *popup = calloc(1, sizeof(*popup));
 
     if (popup == NULL) {
+        wlr_xdg_popup_destroy(wlr_popup);
         return false;
     }
     popup->layer = layer;
     popup->wlr_popup = wlr_popup;
     popup->commit.notify = leme_layer_popup_handle_commit;
     wl_signal_add(&wlr_popup->base->surface->events.commit, &popup->commit);
+    popup->reposition.notify = leme_layer_popup_handle_reposition;
+    wl_signal_add(&wlr_popup->events.reposition, &popup->reposition);
+    popup->new_popup.notify = leme_layer_popup_handle_new_popup;
+    wl_signal_add(&wlr_popup->base->events.new_popup, &popup->new_popup);
     popup->destroy.notify = leme_layer_popup_handle_destroy;
     wl_signal_add(&wlr_popup->events.destroy, &popup->destroy);
     wl_list_insert(&layer->popups, &popup->link);
@@ -224,8 +267,6 @@ leme_layer_popup_create(struct leme_layer_surface *layer,
         wlr_xdg_popup_destroy(wlr_popup);
         return false;
     }
-    leme_render_layer_popup_unconstrain(popup, leme_layer_full_box(layer));
-    leme_render_layer_popup_update(popup);
     return true;
 }
 
@@ -255,11 +296,7 @@ leme_layer_handle_destroy(struct wl_listener *listener, void *data)
     (void)data;
     layer->wlr_layer_surface->data = NULL;
     wl_list_for_each_safe(popup, temporary, &layer->popups, link) {
-        leme_render_layer_popup_destroy(popup);
-        wl_list_remove(&popup->commit.link);
-        wl_list_remove(&popup->destroy.link);
-        wl_list_remove(&popup->link);
-        free(popup);
+        leme_layer_popup_finish(popup);
     }
     leme_render_layer_destroy(layer);
     wl_list_remove(&layer->commit.link);

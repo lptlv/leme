@@ -59,7 +59,6 @@ void leme_render_layers_refresh_output(struct leme_server *server);
 void leme_render_layer_configure(struct leme_layer_surface *layer,
     struct leme_box full, struct leme_box *usable);
 bool leme_render_layer_popup_create(struct leme_layer_popup *popup);
-void leme_render_layer_popup_update(struct leme_layer_popup *popup);
 void leme_render_layer_popup_destroy(struct leme_layer_popup *popup);
 void leme_render_layer_popup_unconstrain(struct leme_layer_popup *popup,
     struct leme_box full);

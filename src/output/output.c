@@ -1510,9 +1510,14 @@ leme_output_handle_commit(struct wl_listener *listener, void *data)
 {
     struct leme_output *output =
         wl_container_of(listener, output, commit);
+    const struct wlr_output_event_commit *event = data;
+    const uint32_t geometry_fields = WLR_OUTPUT_STATE_MODE |
+        WLR_OUTPUT_STATE_ENABLED | WLR_OUTPUT_STATE_SCALE |
+        WLR_OUTPUT_STATE_TRANSFORM;
 
-    (void)data;
-    if (output->server->focused_output == output && output->wlr_output->enabled) {
+    if ((event->state->committed & geometry_fields) != 0 &&
+            output->server->focused_output == output &&
+            output->wlr_output->enabled) {
         leme_output_refresh_geometry(output);
         leme_desktop_output_changed(output->server);
         leme_session_output_changed(output->server);
