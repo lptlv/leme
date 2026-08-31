@@ -73,13 +73,14 @@ Build and install as above, with two added flags:
 ```sh
 meson setup build --prefix=/usr -Deffects=true
 meson compile -C build
-sudo meson install -C build --skip-subprojects
+sudo meson install -C build
 ```
 
-Without `--skip-subprojects`, wlroots' own headers and `wlroots-0.20.pc` land
-in the prefix, and anything else on the machine that builds against wlroots
-would find Leme's patched copy instead of the system one. The `leme` binary
-is unaffected either way, because the patched renderer is linked into it.
+The patched wlroots is never installed: its `install` rules are guarded by
+`meson.is_subproject()`, so only the `leme` binary and its session files land
+in the prefix. Nothing else on the machine can pick up Leme's patched wlroots
+headers or `wlroots-0.20.pc` by accident. The patched renderer is linked into
+`leme` itself, so the binary works either way.
 
 The option compiles wlroots from source, pinned to the revision in
 `subprojects/wlroots.wrap`, with the rendering patch in

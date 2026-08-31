@@ -38,6 +38,18 @@ A mode with `escape_exits false` must bind a `mode` command. This prevents a con
 
 `switch_vt` is unavailable in nested and headless sessions. `switch_vt` and `quit` remain emergency compositor actions while a client inhibits shortcuts or the session is locked.
 
+Range loops can generate numbered VT bindings:
+
+```scfg
+bind_group "vt" {
+    for i in 1..12 {
+        CTRL+ALT+F$i switch_vt $i
+    }
+}
+```
+
+Generated bindings undergo the same duplicate, keysym, command, and VT validation as handwritten bindings.
+
 ## Binding groups
 
 A `bind_group` stores bindings for reuse. It is not a mode and cannot be selected with `mode`:

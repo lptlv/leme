@@ -1,6 +1,6 @@
 project(
   'leme', 'c',
-  version: '0.1.0',
+  version: '0.1.1',
   default_options: ['c_std=c17', 'warning_level=3', 'werror=true'],
 )
 
@@ -36,11 +36,6 @@ add_project_arguments(
 leme_inc = include_directories('src')
 
 if get_option('effects')
-  # subproject() rather than a fallback: the patched copy must be certain,
-  # not merely preferred over a system library that happens to be present.
-  # Static: the patched library must not be findable at runtime by soname.
-  # A shared build installs a leme that resolves libwlroots-0.20.so to the
-  # unpatched system copy and dies on the first patched symbol.
   wlroots_proj = subproject('wlroots',
     default_options: ['examples=false', 'default_library=static'])
   wlroots_dep = wlroots_proj.get_variable('wlroots')
@@ -75,8 +70,11 @@ leme_sources = files(
   'src/config/check.c',
   'src/config/config.c',
   'src/config/diagnostics.c',
+  'src/config/envfile.c',
+  'src/config/expand.c',
   'src/config/parse.c',
-  'src/config/scfg_diag.c',
+  'src/config/render.c',
+  'src/config/source_table.c',
   'src/config/scfg_lex.c',
   'src/config/scfg_parse.c',
   'src/config/scfg_source.c',

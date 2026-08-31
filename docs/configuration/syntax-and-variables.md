@@ -80,6 +80,99 @@ vars {
 
 The `vars` block may appear once anywhere in the file. Names declared earlier in the block are visible to later names. Leme collects the block before expansion, so a variable may be used above its declaration in another block.
 
+## Environment reads
+
+`$(env.NAME)` reads an environment variable from Leme's parent process during configuration load and reload:
+
+```scfg
+vars {
+    terminal $(env.TERMINAL)
+}
+```
+
+If the named environment variable is unset or empty, Leme records a recoverable diagnostic and substitutes the literal string `none`. The value is inserted literally into the field without rescanning syntax. Environment reads located inside inactive conditional branches are never evaluated.
+
+If a variable is not set in Leme's environment, `$(env.NAME)` falls back to an
+optional `leme.env` file beside the configuration file. The file is plain
+`NAME=value` lines:
+
+```
+# ~/.config/leme/leme.env
+LEME_PROFILE=desktop
+PRIMARY_OUTPUT=DP-1
+```
+
+Blank lines are ignored, and a line whose first non-blank character is `#` is a
+comment. Blanks around the name and the value are trimmed. The value is taken
+literally: quotes are kept, `$` is not expanded, and `export NAME=value` is
+rejected. An empty value counts as unset.
+
+The process environment always wins over the file, so a value can be overridden
+for one run without editing anything:
+
+```sh
+LEME_PROFILE=laptop leme --config-check
+```
+
+The file is read from the directory of the configuration file being loaded, and
+it is re-read on `reload_config`, so changing it does not require a new session.
+An absent file is not an error.
+
+Environment reads always require the explicit `$(env.NAME)` syntax. Regular `$name` and `$(name)` forms look up configuration variables and loop locals. `$env.NAME` does not read the process environment; it is treated as a configuration variable `$env` followed by the literal text `.NAME`. Without a configuration variable named `env`, `$env.NAME` fails as an unknown variable error. Use `$$` to produce a literal `$` character.
+
+## Ranges and loops
+
+A `for` loop iterates over an inclusive ascending integer range or a named list:
+
+```scfg
+for i in 1..12 {
+    CTRL+ALT+F$i switch_vt $i
+}
+```
+
+Range bounds must be nonnegative integers with `low <= high`. The loop variable exists only within the loop body and shadows any same-named scalar or outer loop variable.
+
+Loops may be nested. Template generation enforces four safety bounds:
+
+- at most 16 simultaneously active generation levels across nested `if` and `for` blocks;
+- at most 1,024 iterations per single loop;
+- at most 65,536 total loop iterations across the entire configuration expansion;
+- at most 8,192 total directives emitted across the expanded configuration.
+
+Descending ranges, custom step sizes, and arithmetic expressions are not supported. See [Reading expansion notes](config-errors.md#reading-expansion-notes) for how diagnostics trace generated directives back to their loops.
+
+## Named lists
+
+A single top-level `lists` block declares named collections of string items:
+
+```scfg
+lists { pads "term" "music" "notes" }
+for pad in pads {
+    scratchpad "$pad" { identity "foot-$pad" }
+}
+```
+
+Items are expanded in declaration order. Lists and scalar variables occupy separate namespaces, allowing a list and scalar to share a name. List items undergo scalar and environment interpolation when the `lists` block is collected. Inline list literals and record objects are not supported.
+
+## Static conditions
+
+Static conditionals compare strings at load time using `==` or `!=`:
+
+```scfg
+vars { profile $(env.LEME_PROFILE) }
+if $profile == "laptop" {
+    output "eDP-1" { scale 1.25 }
+} else {
+    output "DP-1" { scale 1.0 }
+}
+```
+
+An `if` block may be followed by an optional adjacent `else` block. Conditionals can be nested inside either branch. Only the selected branch is expanded and checked for semantic validity; unselected branches do not evaluate variables or report semantic diagnostics. Structural syntax errors, such as unclosed quotes or missing braces anywhere in the file, are rejected during initial parsing before expansion runs.
+
+## Language boundary
+
+Template generation occurs entirely at configuration load time. Leme does not execute shell scripts, run-time conditional hooks, functions, macros, or command substitutions during template expansion.
+
 ## Shell syntax is not implicit
 
 `spawn` and `exec` receive an argument vector directly after Leme expands its

@@ -5,11 +5,11 @@
 #include <stddef.h>
 
 struct leme_json {
-    char *data;
-    size_t length;
-    size_t capacity;
-    bool failed;
-    bool need_comma;
+  char *data;
+  size_t length;
+  size_t capacity;
+  bool failed;
+  bool need_comma;
 };
 
 void leme_json_init(struct leme_json *json);

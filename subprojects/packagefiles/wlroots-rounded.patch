@@ -1097,3 +1097,67 @@ index 7bc8b76..643008e 100644
  			.filter_mode = scene_buffer->filter_mode,
  			.blend_mode = !data->output->scene->calculate_visibility ||
  					!pixman_region32_empty(&opaque) ?
+--- a/meson.build
++++ b/meson.build
+@@ -152,7 +152,7 @@
+ 	versioned_name, wlr_files,
+ 	dependencies: wlr_deps,
+ 	include_directories: [wlr_inc],
+-	install: true,
++	install: not meson.is_subproject(),
+ 	link_args: symbols_flag,
+ 	link_depends: symbols_file,
+ )
+@@ -178,12 +178,14 @@
+ 	subdir('tinywl')
+ endif
+ 
+-pkgconfig = import('pkgconfig')
+-pkgconfig.generate(
+-	lib_wlr,
+-	name: versioned_name,
+-	description: 'Wayland compositor library',
+-	subdirs: versioned_name,
+-	url: 'https://gitlab.freedesktop.org/wlroots/wlroots',
+-	variables: wlr_vars,
+-)
++if not meson.is_subproject()
++	pkgconfig = import('pkgconfig')
++	pkgconfig.generate(
++		lib_wlr,
++		name: versioned_name,
++		description: 'Wayland compositor library',
++		subdirs: versioned_name,
++		url: 'https://gitlab.freedesktop.org/wlroots/wlroots',
++		variables: wlr_vars,
++	)
++endif
+--- a/include/meson.build
++++ b/include/meson.build
+@@ -24,10 +24,12 @@
+ 	exclude_files += 'backend/session.h'
+ endif
+ 
+-install_subdir('wlr',
+-	install_dir: get_option('includedir') / versioned_name,
+-	exclude_files: exclude_files,
+-)
++if not meson.is_subproject()
++	install_subdir('wlr',
++		install_dir: get_option('includedir') / versioned_name,
++		exclude_files: exclude_files,
++	)
++endif
+ 
+ foreach name, have : internal_features
+ 	internal_config.set10('HAVE_' + name.underscorify().to_upper(), have)
+--- a/include/wlr/meson.build
++++ b/include/wlr/meson.build
+@@ -22,4 +22,6 @@
+ 	configuration: version_data,
+ )
+ 
+-install_headers(conf_h, ver_h, subdir: versioned_name / 'wlr')
++if not meson.is_subproject()
++	install_headers(conf_h, ver_h, subdir: versioned_name / 'wlr')
++endif

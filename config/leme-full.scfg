@@ -76,6 +76,17 @@ scratchpad "drop" {
     height 0.6
 }
 
+# A list of scratchpads generated with a loop. Uncomment to use:
+# lists {
+#     pads "term" "music"
+# }
+# for pad in pads {
+#     scratchpad "$pad" {
+#         identity "foot-$pad"
+#         spawn foot --app-id "foot-$pad"
+#     }
+# }
+
 keyboard {
     layout pt
     layout us
@@ -104,6 +115,21 @@ output "DP-2" {
     right_of "DP-1"
 }
 
+# Profile-based output selection example (uncomment the profile variable below
+# first). LEME_PROFILE comes from the environment, or from a leme.env file beside
+# this one -- see config/leme.env for an example:
+# if $profile == "laptop" {
+#     output "eDP-1" {
+#         mode 1920x1080
+#         scale 1.25
+#     }
+# } else {
+#     output "DP-1" {
+#         mode 1920x1080
+#         scale 1.0
+#     }
+# }
+
 pointer {
     accel_profile adaptive
     accel_speed 0.0
@@ -120,21 +146,13 @@ pointer "Razer Razer DeathAdder V2" {
 vars {
     mod SUPER
     term foot
+    # profile $(env.LEME_PROFILE)
 }
 
 bind_group "vt" {
-    CTRL+ALT+F1 switch_vt 1
-    CTRL+ALT+F2 switch_vt 2
-    CTRL+ALT+F3 switch_vt 3
-    CTRL+ALT+F4 switch_vt 4
-    CTRL+ALT+F5 switch_vt 5
-    CTRL+ALT+F6 switch_vt 6
-    CTRL+ALT+F7 switch_vt 7
-    CTRL+ALT+F8 switch_vt 8
-    CTRL+ALT+F9 switch_vt 9
-    CTRL+ALT+F10 switch_vt 10
-    CTRL+ALT+F11 switch_vt 11
-    CTRL+ALT+F12 switch_vt 12
+    for i in 1..12 {
+        CTRL+ALT+F$i switch_vt $i
+    }
 }
 
 bind_group "movement" {
@@ -167,24 +185,10 @@ bind_group "tags" {
     $mod+Left focus_previous_tag
     $mod+Tab focus_previous_view
     $mod+grave focus_last_tag
-    $mod+1 focus_tag 1
-    $mod+2 focus_tag 2
-    $mod+3 focus_tag 3
-    $mod+4 focus_tag 4
-    $mod+5 focus_tag 5
-    $mod+6 focus_tag 6
-    $mod+7 focus_tag 7
-    $mod+8 focus_tag 8
-    $mod+9 focus_tag 9
-    $mod+SHIFT+1 move_view_to_tag 1
-    $mod+SHIFT+2 move_view_to_tag 2
-    $mod+SHIFT+3 move_view_to_tag 3
-    $mod+SHIFT+4 move_view_to_tag 4
-    $mod+SHIFT+5 move_view_to_tag 5
-    $mod+SHIFT+6 move_view_to_tag 6
-    $mod+SHIFT+7 move_view_to_tag 7
-    $mod+SHIFT+8 move_view_to_tag 8
-    $mod+SHIFT+9 move_view_to_tag 9
+    for i in 1..9 {
+        $mod+$i focus_tag $i
+        $mod+SHIFT+$i move_view_to_tag $i
+    }
     $mod+CTRL+Right move_view_to_tag next follow
     $mod+CTRL+Left move_view_to_tag previous follow
     $mod+Delete remove_empty_tag 4

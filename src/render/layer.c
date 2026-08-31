@@ -10,169 +10,152 @@
 #include <wlr/types/wlr_xdg_shell.h>
 
 static struct wlr_scene_tree *
-leme_render_layer_parent(struct leme_server *server, uint32_t layer)
-{
-    switch (layer) {
-    case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
-        return server->scene_background;
-    case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
-        return server->scene_bottom;
-    case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
-        return server->scene_top;
-    case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
-        return server->scene_overlay;
-    default:
-        return NULL;
-    }
+leme_render_layer_parent(struct leme_server *server, uint32_t layer) {
+  switch (layer) {
+  case ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND:
+    return server->scene_background;
+  case ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM:
+    return server->scene_bottom;
+  case ZWLR_LAYER_SHELL_V1_LAYER_TOP:
+    return server->scene_top;
+  case ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY:
+    return server->scene_overlay;
+  default:
+    return NULL;
+  }
 }
 
-bool
-leme_render_layer_create(struct leme_layer_surface *layer)
-{
-    struct wlr_scene_tree *parent = leme_render_layer_parent(
-        layer->server, layer->wlr_layer_surface->pending.layer);
+bool leme_render_layer_create(struct leme_layer_surface *layer) {
+  struct wlr_scene_tree *parent = leme_render_layer_parent(
+      layer->server, layer->wlr_layer_surface->pending.layer);
 
-    if (parent == NULL) {
-        return false;
-    }
-    layer->render_tree = wlr_scene_tree_create(parent);
-    if (layer->render_tree == NULL) {
-        return false;
-    }
-    layer->render_tree->node.data = layer;
-    layer->scene_layer_surface = wlr_scene_layer_surface_v1_create(
-        layer->render_tree, layer->wlr_layer_surface);
-    if (layer->scene_layer_surface == NULL) {
-        leme_render_layer_destroy(layer);
-        return false;
-    }
-    leme_session_refresh_idle_inhibitors(layer->server);
-    return true;
+  if (parent == NULL) {
+    return false;
+  }
+  layer->render_tree = wlr_scene_tree_create(parent);
+  if (layer->render_tree == NULL) {
+    return false;
+  }
+  layer->render_tree->node.data = layer;
+  layer->scene_layer_surface = wlr_scene_layer_surface_v1_create(
+      layer->render_tree, layer->wlr_layer_surface);
+  if (layer->scene_layer_surface == NULL) {
+    leme_render_layer_destroy(layer);
+    return false;
+  }
+  leme_session_refresh_idle_inhibitors(layer->server);
+  return true;
 }
 
-void
-leme_render_layer_destroy(struct leme_layer_surface *layer)
-{
+void leme_render_layer_destroy(struct leme_layer_surface *layer) {
+  if (layer->render_tree != NULL) {
+    wlr_scene_node_destroy(&layer->render_tree->node);
+  }
+  layer->render_tree = NULL;
+  layer->scene_layer_surface = NULL;
+  leme_session_refresh_idle_inhibitors(layer->server);
+}
+
+void leme_render_layer_configure(struct leme_layer_surface *layer,
+                                 struct leme_box full,
+                                 struct leme_box *usable) {
+  struct leme_layer_popup *popup;
+  struct wlr_box full_box = {
+      .x = full.x,
+      .y = full.y,
+      .width = full.width,
+      .height = full.height,
+  };
+  struct wlr_box usable_box = {
+      .x = usable->x,
+      .y = usable->y,
+      .width = usable->width,
+      .height = usable->height,
+  };
+
+  if (layer->scene_layer_surface == NULL) {
+    return;
+  }
+  wlr_scene_layer_surface_v1_configure(layer->scene_layer_surface, &full_box,
+                                       &usable_box);
+  wl_list_for_each(popup, &layer->popups, link) {
+    leme_render_layer_popup_unconstrain(popup, full);
+  }
+  *usable = (struct leme_box){
+      .x = usable_box.x,
+      .y = usable_box.y,
+      .width = usable_box.width,
+      .height = usable_box.height,
+  };
+}
+
+bool leme_render_layer_popup_create(struct leme_layer_popup *popup) {
+  struct wlr_xdg_surface *parent;
+  struct wlr_scene_tree *parent_tree;
+
+  if (popup->layer->scene_layer_surface == NULL) {
+    return false;
+  }
+  parent = wlr_xdg_surface_try_from_wlr_surface(popup->wlr_popup->parent);
+  parent_tree =
+      parent == NULL ? popup->layer->scene_layer_surface->tree : parent->data;
+  if (parent_tree == NULL) {
+    return false;
+  }
+  popup->scene_tree =
+      wlr_scene_xdg_surface_create(parent_tree, popup->wlr_popup->base);
+  if (popup->scene_tree == NULL) {
+    return false;
+  }
+  popup->wlr_popup->base->data = popup->scene_tree;
+  leme_session_refresh_idle_inhibitors(popup->layer->server);
+  return true;
+}
+
+void leme_render_layer_popup_destroy(struct leme_layer_popup *popup) {
+  popup->wlr_popup->base->data = NULL;
+  if (popup->scene_tree != NULL) {
+    wlr_scene_node_destroy(&popup->scene_tree->node);
+    popup->scene_tree = NULL;
+  }
+  leme_session_refresh_idle_inhibitors(popup->layer->server);
+}
+
+void leme_render_layer_popup_unconstrain(struct leme_layer_popup *popup,
+                                         struct leme_box full) {
+  struct wlr_scene_tree *layer_tree = popup->layer->scene_layer_surface->tree;
+  struct wlr_box constraint = {
+      .x = full.x - layer_tree->node.x,
+      .y = full.y - layer_tree->node.y,
+      .width = full.width,
+      .height = full.height,
+  };
+
+  wlr_xdg_popup_unconstrain_from_box(popup->wlr_popup, &constraint);
+}
+
+void leme_render_layers_refresh_output(struct leme_server *server) {
+  struct leme_layer_surface *layer;
+
+  wl_list_for_each(layer, &server->layer_surfaces, link) {
     if (layer->render_tree != NULL) {
-        wlr_scene_node_destroy(&layer->render_tree->node);
+      wlr_scene_node_set_enabled(&layer->render_tree->node,
+                                 layer->output != NULL &&
+                                     layer->output->wlr_output->enabled);
     }
-    layer->render_tree = NULL;
-    layer->scene_layer_surface = NULL;
-    leme_session_refresh_idle_inhibitors(layer->server);
+  }
+  leme_session_refresh_idle_inhibitors(server);
 }
 
-void
-leme_render_layer_configure(struct leme_layer_surface *layer,
-    struct leme_box full, struct leme_box *usable)
-{
-    struct leme_layer_popup *popup;
-    struct wlr_box full_box = {
-        .x = full.x,
-        .y = full.y,
-        .width = full.width,
-        .height = full.height,
-    };
-    struct wlr_box usable_box = {
-        .x = usable->x,
-        .y = usable->y,
-        .width = usable->width,
-        .height = usable->height,
-    };
+void leme_render_layer_update_tree(struct leme_layer_surface *layer) {
+  struct wlr_scene_tree *parent;
 
-    if (layer->scene_layer_surface == NULL) {
-        return;
-    }
-    wlr_scene_layer_surface_v1_configure(
-        layer->scene_layer_surface, &full_box, &usable_box);
-    wl_list_for_each(popup, &layer->popups, link) {
-        leme_render_layer_popup_unconstrain(popup, full);
-    }
-    *usable = (struct leme_box){
-        .x = usable_box.x,
-        .y = usable_box.y,
-        .width = usable_box.width,
-        .height = usable_box.height,
-    };
-}
-
-bool
-leme_render_layer_popup_create(struct leme_layer_popup *popup)
-{
-    struct wlr_xdg_surface *parent;
-    struct wlr_scene_tree *parent_tree;
-
-    if (popup->layer->scene_layer_surface == NULL) {
-        return false;
-    }
-    parent = wlr_xdg_surface_try_from_wlr_surface(popup->wlr_popup->parent);
-    parent_tree = parent == NULL ?
-        popup->layer->scene_layer_surface->tree : parent->data;
-    if (parent_tree == NULL) {
-        return false;
-    }
-    popup->scene_tree = wlr_scene_xdg_surface_create(
-        parent_tree, popup->wlr_popup->base);
-    if (popup->scene_tree == NULL) {
-        return false;
-    }
-    popup->wlr_popup->base->data = popup->scene_tree;
-    leme_session_refresh_idle_inhibitors(popup->layer->server);
-    return true;
-}
-
-void
-leme_render_layer_popup_destroy(struct leme_layer_popup *popup)
-{
-    popup->wlr_popup->base->data = NULL;
-    if (popup->scene_tree != NULL) {
-        wlr_scene_node_destroy(&popup->scene_tree->node);
-        popup->scene_tree = NULL;
-    }
-    leme_session_refresh_idle_inhibitors(popup->layer->server);
-}
-
-void
-leme_render_layer_popup_unconstrain(struct leme_layer_popup *popup,
-    struct leme_box full)
-{
-    struct wlr_scene_tree *layer_tree =
-        popup->layer->scene_layer_surface->tree;
-    struct wlr_box constraint = {
-        .x = full.x - layer_tree->node.x,
-        .y = full.y - layer_tree->node.y,
-        .width = full.width,
-        .height = full.height,
-    };
-
-    wlr_xdg_popup_unconstrain_from_box(popup->wlr_popup, &constraint);
-}
-
-void
-leme_render_layers_refresh_output(struct leme_server *server)
-{
-    struct leme_layer_surface *layer;
-
-    wl_list_for_each(layer, &server->layer_surfaces, link) {
-        if (layer->render_tree != NULL) {
-            wlr_scene_node_set_enabled(&layer->render_tree->node,
-                layer->output != NULL &&
-                layer->output->wlr_output->enabled);
-        }
-    }
-    leme_session_refresh_idle_inhibitors(server);
-}
-
-void
-leme_render_layer_update_tree(struct leme_layer_surface *layer)
-{
-    struct wlr_scene_tree *parent;
-
-    if (layer->render_tree == NULL) {
-        return;
-    }
-    parent = leme_render_layer_parent(
-        layer->server, layer->wlr_layer_surface->current.layer);
-    if (parent != NULL && layer->render_tree->node.parent != parent) {
-        wlr_scene_node_reparent(&layer->render_tree->node, parent);
-    }
+  if (layer->render_tree == NULL) {
+    return;
+  }
+  parent = leme_render_layer_parent(layer->server,
+                                    layer->wlr_layer_surface->current.layer);
+  if (parent != NULL && layer->render_tree->node.parent != parent) {
+    wlr_scene_node_reparent(&layer->render_tree->node, parent);
+  }
 }

@@ -7,7 +7,7 @@ struct leme_server;
 struct leme_view;
 
 bool leme_capture_view_eligible(const struct leme_server *server,
-    const struct leme_view *view);
+                                const struct leme_view *view);
 void leme_capture_invalidate_view(struct leme_view *view);
 void leme_capture_invalidate_all(struct leme_server *server);
 void leme_capture_reconcile_outputs(struct leme_server *server);

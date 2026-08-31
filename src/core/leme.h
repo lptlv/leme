@@ -10,10 +10,10 @@
 #define LEME_ARRAY_LENGTH(array) (sizeof(array) / sizeof((array)[0]))
 
 struct leme_box {
-    int x;
-    int y;
-    int width;
-    int height;
+  int x;
+  int y;
+  int width;
+  int height;
 };
 
 #endif

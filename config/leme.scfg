@@ -17,13 +17,10 @@ binds "common" {
     $mod+Return spawn $term
     $mod+q close_view
 
-    $mod+1 focus_tag 1
-    $mod+2 focus_tag 2
-    $mod+3 focus_tag 3
-
-    $mod+SHIFT+1 move_view_to_tag 1
-    $mod+SHIFT+2 move_view_to_tag 2
-    $mod+SHIFT+3 move_view_to_tag 3
+    for i in 1..3 {
+        $mod+$i focus_tag $i
+        $mod+SHIFT+$i move_view_to_tag $i
+    }
 
     $mod+r reload_config
     $mod+SHIFT+e quit

@@ -95,10 +95,7 @@ changes.
 
 ### Visible configuration errors
 
-Add a small on-screen report for configuration errors. The current build can
-validate configuration offline, writes runtime diagnostics to the session log,
-and exposes them through `timao get config`, but the accepted `config_errors`
-settings do not draw anything yet.
+Add a small on-screen report for configuration errors. Diagnostics now carry spans, labels, and expansion provenance, so the remaining work is drawing the banner rather than producing its content. The accepted `config_errors` settings do not draw anything yet.
 
 ### Session-owned desktop services
 
