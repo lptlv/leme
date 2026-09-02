@@ -159,6 +159,15 @@ struct leme_publication_config {
   enum leme_activation_policy activation;
 };
 
+/*
+ * Quais camadas o ecrã inteiro tapa. A sessão bloqueada fica sempre acima.
+ */
+enum leme_fullscreen_coverage {
+  LEME_FULLSCREEN_COVERS_NONE,
+  LEME_FULLSCREEN_COVERS_TOP,
+  LEME_FULLSCREEN_COVERS_OVERLAY,
+};
+
 enum leme_banner_position {
   LEME_BANNER_TOP,
   LEME_BANNER_BOTTOM,
@@ -196,6 +205,7 @@ struct leme_config {
   float border_inactive[4];
   double opacity_active;
   double opacity_inactive;
+  enum leme_fullscreen_coverage fullscreen_covers;
   struct leme_animation_settings animation[LEME_ANIMATION_EVENT_COUNT];
   struct leme_workspace_animation_settings workspace_animation;
   struct leme_tag_settings tag_defaults;

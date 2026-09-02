@@ -24,6 +24,9 @@ style {
     border_inactive "#3a3a3a"
     opacity_active 1.0
     opacity_inactive 1.0
+    # Which layer-shell surfaces a fullscreen window covers.
+    # none keeps bars on top, overlay lets nothing through.
+    fullscreen_covers top
 }
 
 # animation {

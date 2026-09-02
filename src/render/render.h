@@ -104,6 +104,7 @@ struct leme_box leme_render_view_content_box(const struct leme_view *view,
 struct leme_box leme_render_view_frame_box(const struct leme_view *view,
                                            struct leme_box content);
 void leme_render_refresh_views(struct leme_server *server);
+void leme_render_apply_fullscreen_coverage(struct leme_server *server);
 bool leme_render_xwayland_create(struct leme_view *view);
 void leme_render_xwayland_set_geometry(struct leme_view *view);
 void leme_render_xwayland_destroy(struct leme_view *view);

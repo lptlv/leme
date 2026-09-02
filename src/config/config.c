@@ -223,6 +223,7 @@ void leme_config_set_style_defaults(struct leme_config *config) {
   config->border_inactive[3] = 1.0f;
   config->opacity_active = 1.0;
   config->opacity_inactive = 1.0;
+  config->fullscreen_covers = LEME_FULLSCREEN_COVERS_TOP;
 }
 
 const struct leme_scratchpad_config *

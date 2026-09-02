@@ -723,6 +723,20 @@ static int leme_layout_saturate_int(int64_t value) {
   return (int)value;
 }
 
+/*
+ * Saturar a origem em INT_MAX faz `x + largura` transbordar mal a caixa chega
+ * ao renderizador, e o pixman recusa o rectângulo. O limite útil é o que
+ * deixa a aresta oposta representável.
+ */
+static int leme_layout_saturate_origin(int64_t value, int extent) {
+  const int64_t limit = (int64_t)INT_MAX - (extent > 0 ? extent : 0);
+
+  if (value < INT_MIN) {
+    return INT_MIN;
+  }
+  return value > limit ? (int)limit : (int)value;
+}
+
 static int leme_layout_saturate_dimension(int64_t value) {
   if (value < 1) {
     return 1;
@@ -733,6 +747,12 @@ static int leme_layout_saturate_dimension(int64_t value) {
   return (int)value;
 }
 
+struct leme_box leme_layout_saturate_box(struct leme_box box) {
+  box.x = leme_layout_saturate_origin(box.x, box.width);
+  box.y = leme_layout_saturate_origin(box.y, box.height);
+  return box;
+}
+
 struct leme_box leme_layout_move_box(struct leme_box box,
                                      enum leme_direction direction,
                                      int amount) {
@@ -741,16 +761,16 @@ struct leme_box leme_layout_move_box(struct leme_box box,
   }
   switch (direction) {
   case LEME_DIRECTION_LEFT:
-    box.x = leme_layout_saturate_int((int64_t)box.x - amount);
+    box.x = leme_layout_saturate_origin((int64_t)box.x - amount, box.width);
     break;
   case LEME_DIRECTION_RIGHT:
-    box.x = leme_layout_saturate_int((int64_t)box.x + amount);
+    box.x = leme_layout_saturate_origin((int64_t)box.x + amount, box.width);
     break;
   case LEME_DIRECTION_UP:
-    box.y = leme_layout_saturate_int((int64_t)box.y - amount);
+    box.y = leme_layout_saturate_origin((int64_t)box.y - amount, box.height);
     break;
   case LEME_DIRECTION_DOWN:
-    box.y = leme_layout_saturate_int((int64_t)box.y + amount);
+    box.y = leme_layout_saturate_origin((int64_t)box.y + amount, box.height);
     break;
   }
   return box;
@@ -811,10 +831,10 @@ struct leme_box leme_layout_resize_box(struct leme_box box,
       height = 1;
     }
   }
-  box.x = leme_layout_saturate_int(x);
-  box.y = leme_layout_saturate_int(y);
   box.width = leme_layout_saturate_dimension(width);
   box.height = leme_layout_saturate_dimension(height);
+  box.x = leme_layout_saturate_origin(x, box.width);
+  box.y = leme_layout_saturate_origin(y, box.height);
   return box;
 }
 

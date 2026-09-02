@@ -489,7 +489,12 @@ bool leme_sticky_apply_box(struct leme_view *view, struct leme_box box,
    * presa que a preencha por inteiro não teria para onde ir, e uma flutuante
    * na mesma situação move-se à vontade. O reancorar quando a área muda
    * continua a garantir que nenhuma se perde fora do ecrã.
+   *
+   * Presa à área útil não fica, mas representável tem de ficar: a caixa segue
+   * direta para o renderizador e uma aresta que transborde é recusada pelo
+   * pixman.
    */
+  box = leme_layout_saturate_box(box);
   if (group->root == view) {
     const int delta_x = leme_sticky_delta(box.x, view->box.x);
     const int delta_y = leme_sticky_delta(box.y, view->box.y);
@@ -499,14 +504,14 @@ bool leme_sticky_apply_box(struct leme_view *view, struct leme_box box,
       struct leme_box member_box =
           member->view == view
               ? box
-              : (struct leme_box){
+              : leme_layout_saturate_box((struct leme_box){
                     .x =
                         leme_sticky_add_saturated(member->view->box.x, delta_x),
                     .y =
                         leme_sticky_add_saturated(member->view->box.y, delta_y),
                     .width = member->view->box.width,
                     .height = member->view->box.height,
-                };
+                });
 
       member->view->box = member_box;
       if (resizing && member->view == view && view->kind == LEME_VIEW_XDG) {

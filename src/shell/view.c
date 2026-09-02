@@ -844,6 +844,43 @@ bool leme_view_set_floating(struct leme_view *view, bool floating) {
   return true;
 }
 
+/*
+ * Com cobertura activa a janela toma o ecrã todo; sem ela fica na área útil,
+ * porque uma caixa inteira debaixo de uma barra só seria recortada.
+ */
+static struct leme_box
+leme_view_fullscreen_area(const struct leme_view *view) {
+  const struct leme_output *output = leme_view_output(view);
+
+  return view->server->config != NULL &&
+                 view->server->config->fullscreen_covers ==
+                     LEME_FULLSCREEN_COVERS_NONE
+             ? leme_output_usable_box(output)
+             : leme_output_full_box(output);
+}
+
+void leme_view_refresh_fullscreen(struct leme_server *server) {
+  struct leme_view *view;
+
+  if (server == NULL || server->views.next == NULL) {
+    return;
+  }
+  wl_list_for_each(view, &server->views, link) {
+    struct leme_box area;
+
+    if (!view->mapped || !view->fullscreen) {
+      continue;
+    }
+    area = leme_view_fullscreen_area(view);
+    if (area.width == view->box.width && area.height == view->box.height &&
+        area.x == view->box.x && area.y == view->box.y) {
+      continue;
+    }
+    view->box = area;
+    leme_render_view_set_box(view, area);
+  }
+}
+
 bool leme_view_set_fullscreen(struct leme_view *view, bool fullscreen) {
   struct leme_box area;
 
@@ -875,7 +912,7 @@ bool leme_view_set_fullscreen(struct leme_view *view, bool fullscreen) {
   leme_render_view_update_layer(view);
   leme_view_ack_fullscreen(view, fullscreen);
   if (fullscreen) {
-    area = leme_output_usable_box(leme_view_output(view));
+    area = leme_view_fullscreen_area(view);
     view->box = area;
     leme_render_view_set_box(view, area);
   } else {

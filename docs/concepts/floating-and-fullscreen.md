@@ -18,7 +18,9 @@ Floating views keep their own position and size. SUPER-left drag moves one, and 
 current output. Sticky windows remain floating, support normal move and resize,
 and may coexist. They share the durable overlay with the shown scratchpad,
 above tagged floating and fullscreen content but below top/overlay layer-shell
-and lock content. Focus orders complete durable units without reversing a
+and lock content. When a fullscreen window is covering layer surfaces, the
+durable overlay rises with it and stays above, so a summoned scratchpad remains
+reachable over fullscreen content. Focus orders complete durable units without reversing a
 root's managed child-window order.
 
 Managed child windows and nested dialogs join their sticky root as one group.
@@ -34,7 +36,15 @@ Fullscreen hides the other views on the current tag from navigation and
 rendering. A fullscreen view is always fully opaque, even when a style or
 window rule requests a lower opacity. This keeps it eligible for direct
 scanout, where the display presents the application's buffer without
-compositing it with other content. Entering fullscreen from a sticky root first
+compositing it with other content.
+
+By default a fullscreen view covers the background, bottom, and top layer-shell
+surfaces and takes the whole output, so bars and most notifications stay behind
+it. `fullscreen_covers` in [appearance](../configuration/appearance.md) changes
+which layers it may cover. Stacking is decided per window, so a fullscreen
+window on one output never hides a bar on another.
+
+Entering fullscreen from a sticky root first
 attaches its complete group to the owner output's current tag and preserves the
 floating frame as the normal fullscreen restore box. A fullscreen window cannot
 become sticky directly.

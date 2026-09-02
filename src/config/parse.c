@@ -1512,8 +1512,15 @@ static bool leme_config_parse_style(struct leme_config *config,
                                     const struct leme_scfg_directive *directive,
                                     const char *path, char **error) {
   static const char *const style_keys[] = {
-      "gap",           "border_width",    "corner_radius",  "blur",
-      "border_active", "border_inactive", "opacity_active", "opacity_inactive",
+      "gap",
+      "border_width",
+      "corner_radius",
+      "blur",
+      "border_active",
+      "border_inactive",
+      "opacity_active",
+      "opacity_inactive",
+      "fullscreen_covers",
   };
   const struct leme_scfg_directive *dir_gap = NULL;
   const struct leme_scfg_directive *dir_border = NULL;
@@ -1523,6 +1530,7 @@ static bool leme_config_parse_style(struct leme_config *config,
   const struct leme_scfg_directive *dir_border_inactive = NULL;
   const struct leme_scfg_directive *dir_opacity_active = NULL;
   const struct leme_scfg_directive *dir_opacity_inactive = NULL;
+  const struct leme_scfg_directive *dir_fullscreen_covers = NULL;
   size_t index;
 
   if (directive->params_len != 0) {
@@ -1723,6 +1731,37 @@ static bool leme_config_parse_style(struct leme_config *config,
       }
       config->opacity_inactive = decimal;
       dir_opacity_inactive = entry;
+    } else if (strcmp(entry->name, "fullscreen_covers") == 0) {
+      if (dir_fullscreen_covers != NULL) {
+        const struct leme_reject_extra extra = {
+            .secondary = dir_fullscreen_covers,
+            .secondary_label = "first defined here",
+        };
+        if (!leme_config_reject_detailed(
+                config, entry, -1, &extra,
+                "duplicate directive `fullscreen_covers` in `style`")) {
+          return false;
+        }
+        continue;
+      }
+      if (strcmp(entry->params[0], "none") == 0) {
+        config->fullscreen_covers = LEME_FULLSCREEN_COVERS_NONE;
+      } else if (strcmp(entry->params[0], "top") == 0) {
+        config->fullscreen_covers = LEME_FULLSCREEN_COVERS_TOP;
+      } else if (strcmp(entry->params[0], "overlay") == 0) {
+        config->fullscreen_covers = LEME_FULLSCREEN_COVERS_OVERLAY;
+      } else {
+        const struct leme_reject_extra extra = {
+            .help = "valid values are `none`, `top`, and `overlay`",
+        };
+        if (!leme_config_reject_detailed(
+                config, entry, 0, &extra,
+                "fullscreen_covers must be none, top, or overlay")) {
+          return false;
+        }
+        continue;
+      }
+      dir_fullscreen_covers = entry;
     } else {
       const char *nearest = leme_config_nearest_key(
           entry->name, style_keys, sizeof(style_keys) / sizeof(style_keys[0]));

@@ -89,6 +89,7 @@ void leme_layer_arrange(struct leme_server *server) {
   }
   if (changed) {
     leme_view_arrange(server);
+    leme_view_refresh_fullscreen(server);
   }
   leme_xwayland_update_workarea(server);
 }

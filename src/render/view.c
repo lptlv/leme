@@ -27,9 +27,33 @@ leme_render_view_parent(const struct leme_view *view) {
   if (leme_ownership_kind(view) == LEME_VIEW_OWNER_DURABLE) {
     return view->server->scene_durable;
   }
+  if (view->fullscreen && (view->server->config == NULL ||
+                           view->server->config->fullscreen_covers !=
+                               LEME_FULLSCREEN_COVERS_NONE)) {
+    return view->server->scene_fullscreen;
+  }
   return view->floating || view->detached || view->fullscreen
              ? view->server->scene_floating
              : view->server->scene_tiled;
+}
+
+/*
+ * Um scratchpad ou grupo pegajoso invoca-se por cima do que estiver a dar,
+ * ecrã inteiro incluído. A árvore `durable` só sobe enquanto houver conteúdo
+ * promovido: sem isso a ordem com as barras ficava mudada no caso comum.
+ */
+static void leme_render_sync_durable(struct leme_server *server) {
+  if (server == NULL || server->scene_durable == NULL ||
+      server->scene_fullscreen == NULL || server->scene_top == NULL) {
+    return;
+  }
+  if (wl_list_empty(&server->scene_fullscreen->children)) {
+    wlr_scene_node_place_below(&server->scene_durable->node,
+                               &server->scene_top->node);
+  } else {
+    wlr_scene_node_place_above(&server->scene_durable->node,
+                               &server->scene_fullscreen->node);
+  }
 }
 
 struct leme_render_surface_tracker {
@@ -296,6 +320,8 @@ void leme_render_view_destroy(struct leme_view *view) {
   for (size_t index = 0; index < LEME_ARRAY_LENGTH(view->border); index++) {
     view->border[index] = NULL;
   }
+  /* Se era a última vista promovida, a árvore `durable` volta ao lugar. */
+  leme_render_sync_durable(view->server);
   leme_session_refresh_idle_inhibitors(view->server);
 }
 
@@ -718,6 +744,37 @@ void leme_render_view_update_layer(struct leme_view *view) {
   if (view->render_tree != NULL && view->render_tree->node.parent != parent) {
     wlr_scene_node_reparent(&view->render_tree->node, parent);
   }
+  leme_render_sync_durable(view->server);
+}
+
+/*
+ * A árvore do ecrã inteiro nasce entre `top` e `overlay`; só a cobertura
+ * `overlay` a sobe. `drag` e `lock` ficam sempre acima.
+ */
+void leme_render_apply_fullscreen_coverage(struct leme_server *server) {
+  struct leme_view *view;
+
+  if (server == NULL || server->scene_fullscreen == NULL ||
+      server->scene_overlay == NULL) {
+    return;
+  }
+  if (server->config != NULL &&
+      server->config->fullscreen_covers == LEME_FULLSCREEN_COVERS_OVERLAY) {
+    wlr_scene_node_place_above(&server->scene_fullscreen->node,
+                               &server->scene_overlay->node);
+  } else {
+    wlr_scene_node_place_below(&server->scene_fullscreen->node,
+                               &server->scene_overlay->node);
+  }
+  if (server->views.next == NULL) {
+    return;
+  }
+  wl_list_for_each(view, &server->views, link) {
+    if (view->fullscreen) {
+      leme_render_view_update_layer(view);
+    }
+  }
+  leme_render_sync_durable(server);
 }
 
 /* A espessura nunca é escalada; só cede quando a caixa não a comporta. */

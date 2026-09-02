@@ -1,6 +1,7 @@
 # Appearance
 
-The `style` block controls gaps, borders, and opacity:
+The `style` block controls gaps, borders, opacity, and how fullscreen windows
+stack:
 
 ```scfg
 style {
@@ -10,6 +11,7 @@ style {
     border_inactive "#3a3a3a"
     opacity_active 1.0
     opacity_inactive 1.0
+    fullscreen_covers top
 }
 ```
 
@@ -23,6 +25,7 @@ style {
 | `border_inactive` | `#RRGGBB` or `#RRGGBBAA` | `#3a3a3a` |
 | `opacity_active` | decimal from `0.0` through `1.0` | `1.0` |
 | `opacity_inactive` | decimal from `0.0` through `1.0` | `1.0` |
+| `fullscreen_covers` | `none`, `top`, or `overlay` | `top` |
 
 The active and inactive border colors follow keyboard focus. Leme draws the border as its complete server-side decoration. It does not draw titlebars or buttons.
 
@@ -47,6 +50,36 @@ do nothing useful says so instead of being silently reduced.
 
 A matching window-rule `opacity` replaces the active or inactive style opacity;
 the values are not multiplied.
+
+## Fullscreen stacking
+
+`fullscreen_covers` decides which layer-shell surfaces a fullscreen window is
+allowed to cover. Panels, bars, and notification daemons are layer-shell
+clients, and each one picks the layer it sits on.
+
+| Value | Effect |
+| --- | --- |
+| `none` | Layer surfaces stay above fullscreen windows, which are sized to the usable area. |
+| `top` | Fullscreen windows cover the background, bottom, and top layers. |
+| `overlay` | Fullscreen windows cover every layer, including overlay. |
+
+`top` is the default because it is what most setups want: Waybar and Mako both
+default to the top layer, so a fullscreen video hides them, while an on-screen
+display or keyboard on the overlay layer still comes through.
+
+Choose `overlay` when nothing at all should interrupt a fullscreen window, and
+`none` to keep a bar permanently visible.
+
+Stacking is decided per window, not per output, so a fullscreen window on one
+monitor never hides the bar on another.
+
+Two things are always above a fullscreen window regardless of this key: the
+session lock screen, and a shown scratchpad or sticky group. A scratchpad is a
+window you summon over whatever is playing, so it stays reachable.
+
+With `none`, a fullscreen window is given the usable area rather than the whole
+output, so a bar with an exclusive zone does not clip it. The other two values
+give it the entire output.
 
 A fullscreen view is always fully opaque, even when a style or window rule
 requests lower opacity. A view with opacity below `1.0` cannot use direct

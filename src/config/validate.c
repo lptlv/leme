@@ -8,6 +8,7 @@
 #include "output/output.h"
 #include "protocols/desktop.h"
 #include "render/render.h"
+#include "shell/view.h"
 #include "workspace/tag.h"
 
 #include <math.h>
@@ -449,6 +450,8 @@ bool leme_config_apply(struct leme_server *server, struct leme_config *next,
   }
   leme_input_replace_modes(server, next->modes, next->mode_count);
   leme_input_apply_pointer_config(server, next);
+  leme_render_apply_fullscreen_coverage(server);
+  leme_view_refresh_fullscreen(server);
   if (leme_output_focused(server) != NULL) {
     leme_tags_arrange_current(
         leme_focused_tags(server),

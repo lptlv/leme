@@ -52,13 +52,15 @@ void leme_render_init(struct leme_server *server) {
   server->scene_floating = wlr_scene_tree_create(&server->scene->tree);
   server->scene_durable = wlr_scene_tree_create(&server->scene->tree);
   server->scene_top = wlr_scene_tree_create(&server->scene->tree);
+  server->scene_fullscreen = wlr_scene_tree_create(&server->scene->tree);
   server->scene_overlay = wlr_scene_tree_create(&server->scene->tree);
   server->scene_drag = wlr_scene_tree_create(&server->scene->tree);
   server->scene_lock = wlr_scene_tree_create(&server->scene->tree);
   if (server->scene_output_layout == NULL || server->scene_background == NULL ||
       server->scene_bottom == NULL || server->scene_tiled == NULL ||
       server->scene_floating == NULL || server->scene_durable == NULL ||
-      server->scene_top == NULL || server->scene_overlay == NULL ||
+      server->scene_top == NULL || server->scene_fullscreen == NULL ||
+      server->scene_overlay == NULL ||
       server->scene_drag == NULL || server->scene_lock == NULL) {
     leme_render_finish(server);
     return;
@@ -86,6 +88,7 @@ void leme_render_finish(struct leme_server *server) {
   server->scene_floating = NULL;
   server->scene_durable = NULL;
   server->scene_top = NULL;
+  server->scene_fullscreen = NULL;
   server->scene_overlay = NULL;
   server->scene_drag = NULL;
   server->scene_lock = NULL;
@@ -349,7 +352,8 @@ bool leme_render_at(struct leme_server *server, double lx, double ly,
     }
     if (ancestor->parent == server->scene_tiled ||
         ancestor->parent == server->scene_floating ||
-        ancestor->parent == server->scene_durable) {
+        ancestor->parent == server->scene_durable ||
+        ancestor->parent == server->scene_fullscreen) {
       struct leme_view *view = owner;
 
       hit->view = leme_ownership_hit_test_eligible(view) ? view : NULL;

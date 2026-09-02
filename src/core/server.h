@@ -69,6 +69,7 @@ struct leme_server {
   struct wlr_scene_tree *scene_floating;
   struct wlr_scene_tree *scene_durable;
   struct wlr_scene_tree *scene_top;
+  struct wlr_scene_tree *scene_fullscreen;
   struct wlr_scene_tree *scene_overlay;
   struct wlr_scene_tree *scene_drag;
   struct wlr_scene_tree *scene_lock;
