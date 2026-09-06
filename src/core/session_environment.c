@@ -38,7 +38,6 @@ static bool leme_session_environment_set(struct leme_server *server) {
   return unsetenv("DISPLAY") == 0;
 }
 
-/* O bloco env só é aplicado depois do fork; o Xwayland herda este ambiente. */
 void leme_session_environment_cursor(const struct leme_server *server) {
   char size[16];
   int written;

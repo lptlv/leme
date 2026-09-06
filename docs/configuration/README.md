@@ -32,6 +32,7 @@ The complete file is linked rather than pasted here. Change connector names, mod
 | [Outputs](outputs.md) | configure modes, placement, cross-output behavior, or publication |
 | [Keyboard](keyboard.md) | choose XKB layouts and variants |
 | [Pointer](pointer.md) | set libinput defaults or exact-device overrides |
+| [Gestures](gestures.md) | configure touchpad workspace switching gestures |
 | [Cursor](cursor.md) | set the pointer theme and size, including for X11 clients |
 | [Keybindings](keybindings.md) | define commands, modes, and reusable binding groups |
 | [Startup and environment](startup-and-environment.md) | launch programs and set their child environment |

@@ -21,7 +21,6 @@ struct leme_tags_resize {
   uint16_t max_tags;
 };
 
-/* As alocações que leme_gate_tags_prepare pode fazer falhar. */
 enum leme_tags_prepare_checkpoint {
   LEME_TAGS_PREPARE_DETACH_PLAN_ALLOCATION,
   LEME_TAGS_PREPARE_DETACH_REMAINING_ALLOCATION,
@@ -43,6 +42,8 @@ struct leme_tag {
   struct leme_view *focused_view;
 };
 
+#define LEME_TAGS_RING_MAX 65
+
 struct leme_tags {
   struct leme_server *server;
   struct leme_output *output;
@@ -53,6 +54,8 @@ struct leme_tags {
   uint16_t previous_id;
   bool previous_is_candidate;
   bool previous_valid;
+  double position;
+  bool position_active;
   enum leme_tag_change_direction last_change_direction;
   bool last_change_direction_valid;
   struct leme_tag **table;
@@ -124,4 +127,12 @@ void leme_tags_apply_settings(struct leme_tags *tags,
                               const struct leme_config *next);
 size_t leme_tags_navigable(const struct leme_tags *tags, uint16_t *ids,
                            size_t capacity);
+double leme_tags_ring_wrap(double position, size_t count);
+size_t leme_tags_ring(const struct leme_tags *tags,
+                      enum leme_tag_change_direction direction, uint16_t *ids,
+                      size_t capacity);
+bool leme_tags_ring_index(const struct leme_tags *tags, uint16_t tag_id,
+                          size_t *index_out);
+double leme_tags_position(const struct leme_tags *tags);
+void leme_tags_position_set(struct leme_tags *tags, double position);
 #endif

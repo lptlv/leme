@@ -4,6 +4,7 @@
 #include "shell/layer.h"
 #include "output/output.h"
 #include "core/server.h"
+#include "input/input.h"
 #include "protocols/tearing.h"
 #include "shell/view.h"
 
@@ -210,6 +211,7 @@ bool leme_render_prepare_output_state(struct leme_output *output,
 void leme_render_handle_session_active(struct leme_server *server,
                                        bool active) {
   if (server != NULL && !active) {
+    leme_input_workspace_gesture_cancel(server);
     leme_animation_manager_finish_all(&server->animations);
   }
 }
@@ -223,11 +225,11 @@ void leme_render_output_frame(struct leme_output *output) {
   if (output->scene_output == NULL) {
     return;
   }
-  /* Um único configure por frame, em vez de um por evento de ponteiro. */
   leme_view_flush_deferred_configures(output->server);
   clock_gettime(CLOCK_MONOTONIC, &now);
   leme_animation_manager_tick(&output->server->animations, &now);
-  if (leme_animation_manager_active(&output->server->animations)) {
+  if (leme_animation_manager_active_for_owner(&output->server->animations,
+                                              output)) {
     wlr_output_schedule_frame(output->wlr_output);
   }
   if (!output->tearing_fallback &&

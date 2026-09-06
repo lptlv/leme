@@ -15,6 +15,7 @@ struct leme_workspace_effect *leme_workspace_effect_create(
     struct wlr_scene_tree *outgoing, struct wlr_scene_tree *incoming,
     struct leme_box viewport, enum leme_tag_change_direction direction,
     const struct leme_workspace_animation_settings *settings);
+void leme_workspace_effect_restore(struct leme_workspace_effect *effect);
 void leme_workspace_effect_destroy(struct leme_workspace_effect *effect);
 bool leme_workspace_effect_has_content(
     const struct leme_workspace_effect *effect);

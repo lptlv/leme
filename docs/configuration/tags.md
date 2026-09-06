@@ -30,7 +30,7 @@ tags {
 | Key | Values | Default | Applies to |
 | --- | --- | --- | --- |
 | `initial` | positive integer, no greater than `maximum` | `3` | pinned tags on every output |
-| `maximum` | positive integer | `9` | highest tag id |
+| `maximum` | positive integer, up to `64` | `9` | highest tag id |
 | `layout` | `dwindle`, `master_stack`, `accordion` | `dwindle` | all tags |
 | `drop_mode` | `simple`, `edges` | `simple` | tiled drag insertion |
 

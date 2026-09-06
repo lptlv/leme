@@ -723,11 +723,6 @@ static int leme_layout_saturate_int(int64_t value) {
   return (int)value;
 }
 
-/*
- * Saturar a origem em INT_MAX faz `x + largura` transbordar mal a caixa chega
- * ao renderizador, e o pixman recusa o rectângulo. O limite útil é o que
- * deixa a aresta oposta representável.
- */
 static int leme_layout_saturate_origin(int64_t value, int extent) {
   const int64_t limit = (int64_t)INT_MAX - (extent > 0 ? extent : 0);
 

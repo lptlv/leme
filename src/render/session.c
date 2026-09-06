@@ -1,5 +1,6 @@
 #include "render/render.h"
 
+#include "input/input.h"
 #include "output/output.h"
 #include "core/server.h"
 #include "protocols/session.h"
@@ -56,9 +57,9 @@ void leme_render_session_set_locked(struct leme_session *session, bool locked) {
   };
 
   if (locked) {
-    /* O done() da área de trabalho limpa todas as máscaras de
-     * apresentação de forma síncrona; o conteúdo do bloqueio não pode
-     * aparecer antes desse desmantelamento. */
+    if (session->server != NULL) {
+      leme_input_workspace_gesture_cancel(session->server);
+    }
     leme_animation_manager_finish_all(&session->server->animations);
   }
   if (session->lock_blocker == NULL) {

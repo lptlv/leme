@@ -24,11 +24,6 @@ struct leme_scratchpad_manager {
   struct wl_list pool;    /* struct leme_view::scratchpad_link, MRU first */
   struct wl_list pending; /* private owned named spawn requests */
   struct leme_view *shown;
-  /*
-   * Ganchos que um teste preenche para substituir o que toca no sistema:
-   * lançar um processo, armar um temporizador, contar configurações. Em
-   * produção ficam nulos e o compositor nunca lhes mexe.
-   */
   bool commit_started;
   void (*commit_observer)(const struct leme_server *, void *);
   void *commit_observer_data;
@@ -42,10 +37,6 @@ struct leme_scratchpad_manager {
   void *direct_prepare_observer_data;
 };
 
-/*
- * Consultas sobre os pedidos por atender. Vivem aqui porque a entrada da
- * lista só existe dentro de scratchpad.c.
- */
 size_t leme_scratchpad_pending_count(const struct leme_server *server);
 bool leme_scratchpad_pending_matches(const struct leme_server *server,
                                      const char *name, const char *identity);

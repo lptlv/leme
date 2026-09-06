@@ -79,11 +79,6 @@ struct leme_view {
   char *scratchpad_name;
   struct leme_sticky_member *sticky_member;
   struct leme_box scratchpad_anchor_area;
-  /*
-   * Um cliente XWayland leva um ConfigureNotify por cada evento de
-   * ponteiro, o que o afoga durante um arrasto. Enquanto está adiado, a
-   * caixa acumula aqui e sai um único configure por frame.
-   */
   struct leme_box deferred_configure_box;
   struct leme_box configured_box;
   bool configured_box_valid;

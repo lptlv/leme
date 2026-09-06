@@ -453,6 +453,56 @@ static void leme_render_view_apply_cached_opacity(struct leme_view *view) {
                                  leme_render_view_apply_opacity, &opacity);
 }
 
+/* A espessura nunca é escalada; só cede quando a caixa não a comporta. */
+static int leme_render_view_clamp_border(int border_width,
+                                         struct leme_box frame) {
+  int maximum = frame.width < frame.height ? frame.width : frame.height;
+
+  maximum = maximum > 0 ? (maximum - 1) / 2 : 0;
+  return border_width < maximum ? border_width : maximum;
+}
+
+static int leme_render_view_border_width(const struct leme_view *view,
+                                         struct leme_box frame) {
+  if (view == NULL || view->fullscreen || view->unmanaged ||
+      view->server == NULL || view->server->config == NULL) {
+    return 0;
+  }
+  return leme_render_view_clamp_border(view->server->config->border_width,
+                                       frame);
+}
+
+/* A visibilidade da moldura respeita a espessura, regras e efeitos. */
+static bool leme_render_view_border_shown(const struct leme_view *view,
+                                          size_t index) {
+  int border_width;
+
+  if (view == NULL || index >= LEME_ARRAY_LENGTH(view->border) ||
+      view->border[index] == NULL) {
+    return false;
+  }
+  if (view->border[1] == NULL) {
+    return index == 0;
+  }
+  if (view->fullscreen || view->unmanaged || view->server == NULL ||
+      view->server->config == NULL) {
+    return false;
+  }
+  if (view->box.width > 0 && view->box.height > 0) {
+    border_width = leme_render_view_border_width(view, view->box);
+  } else {
+    border_width = view->server->config->border_width;
+  }
+  if (border_width <= 0) {
+    return false;
+  }
+#ifdef LEME_HAVE_EFFECTS
+  return index == 0;
+#else
+  return true;
+#endif
+}
+
 /*
  * Esconder com set_enabled(false) corta os frame callbacks ao cliente, e um
  * cliente que só desenha neles nunca confirma o configure: a espera pela
@@ -470,7 +520,9 @@ void leme_render_view_sync_presentation(struct leme_view *view) {
   }
   for (index = 0; index < LEME_ARRAY_LENGTH(view->border); index++) {
     if (view->border[index] != NULL) {
-      wlr_scene_node_set_enabled(&view->border[index]->node, !hidden);
+      bool shown = !hidden && leme_render_view_border_shown(view, index);
+
+      wlr_scene_node_set_enabled(&view->border[index]->node, shown);
     }
   }
 }
@@ -777,24 +829,6 @@ void leme_render_apply_fullscreen_coverage(struct leme_server *server) {
   leme_render_sync_durable(server);
 }
 
-/* A espessura nunca é escalada; só cede quando a caixa não a comporta. */
-static int leme_render_view_clamp_border(int border_width,
-                                         struct leme_box frame) {
-  int maximum = frame.width < frame.height ? frame.width : frame.height;
-
-  maximum = maximum > 0 ? (maximum - 1) / 2 : 0;
-  return border_width < maximum ? border_width : maximum;
-}
-
-static int leme_render_view_border_width(const struct leme_view *view,
-                                         struct leme_box frame) {
-  if (view->fullscreen || view->unmanaged || view->server->config == NULL) {
-    return 0;
-  }
-  return leme_render_view_clamp_border(view->server->config->border_width,
-                                       frame);
-}
-
 /*
  * O raio nunca passa de metade do lado mais curto: acima disso a caixa com
  * sinal inverte-se e o canto deixa de fechar.
@@ -1024,31 +1058,48 @@ static void leme_render_view_frame_from_snapshot(
   }
 }
 
-void leme_render_view_apply_active_snapshot(const struct leme_view *view,
-                                            struct wlr_scene_tree *snapshot) {
+void leme_render_view_apply_snapshot(const struct leme_view *view,
+                                     struct wlr_scene_tree *snapshot,
+                                     bool activated) {
   struct leme_render_view_frame_nodes nodes;
-  const struct leme_config *config;
+  const struct leme_config *config = NULL;
   struct leme_view_rules rules;
   float opacity;
   size_t index;
 
-  if (view == NULL || snapshot == NULL || view->server == NULL ||
-      view->server->config == NULL) {
+  if (view == NULL || snapshot == NULL) {
     return;
   }
-  config = view->server->config;
-  rules = leme_view_rules_match(config, leme_view_identity(view),
-                                leme_view_title(view));
-  opacity = leme_render_view_opacity(config, true, view->fullscreen, &rules);
+  if (view->server != NULL) {
+    config = view->server->config;
+  }
+  if (activated && config != NULL) {
+    rules = leme_view_rules_match(config, leme_view_identity(view),
+                                  leme_view_title(view));
+    opacity =
+        leme_render_view_opacity(config, true, view->fullscreen, &rules);
+  } else {
+    opacity = view->render_opacity;
+  }
   wlr_scene_node_for_each_buffer(&snapshot->node,
                                  leme_render_view_apply_opacity, &opacity);
 
   leme_render_view_frame_from_snapshot(snapshot, &nodes);
   for (index = 0; index < LEME_ARRAY_LENGTH(nodes.border); index++) {
-    if (nodes.border[index] != NULL) {
-      wlr_scene_rect_set_color(nodes.border[index], config->border_active);
+    if (nodes.border[index] != NULL && view->border[index] != NULL) {
+      bool shown = leme_render_view_border_shown(view, index);
+
+      wlr_scene_node_set_enabled(&nodes.border[index]->node, shown);
+      if (activated && config != NULL) {
+        wlr_scene_rect_set_color(nodes.border[index], config->border_active);
+      }
     }
   }
+}
+
+void leme_render_view_apply_active_snapshot(const struct leme_view *view,
+                                            struct wlr_scene_tree *snapshot) {
+  leme_render_view_apply_snapshot(view, snapshot, true);
 }
 
 static struct leme_box leme_render_view_shrunk(struct leme_box box,
@@ -1261,8 +1312,9 @@ static void leme_render_view_apply_surface_effects(
    */
   struct wlr_surface *surface =
       view->kind == LEME_VIEW_XDG
-          ? (view->xdg_toplevel != NULL ? view->xdg_toplevel->base->surface
-                                        : NULL)
+          ? (view->xdg_toplevel != NULL && view->xdg_toplevel->base != NULL
+                 ? view->xdg_toplevel->base->surface
+                 : NULL)
           : (view->xwayland_surface != NULL ? view->xwayland_surface->surface
                                             : NULL);
   struct leme_render_surface_effects target = {
@@ -1351,7 +1403,8 @@ void leme_render_view_clip_to_geometry(struct leme_view *view) {
   struct wlr_box geometry;
 
   if (view == NULL || view->scene_tree == NULL || view->kind != LEME_VIEW_XDG ||
-      view->xdg_toplevel == NULL) {
+      view->xdg_toplevel == NULL || view->xdg_toplevel->base == NULL ||
+      view->xdg_toplevel->base->surface == NULL) {
     return;
   }
   surface = view->xdg_toplevel->base->surface;

@@ -484,16 +484,6 @@ bool leme_sticky_apply_box(struct leme_view *view, struct leme_box box,
   if (output == NULL) {
     return false;
   }
-  /*
-   * Um movimento pedido pelo utilizador não é preso à área útil: uma vista
-   * presa que a preencha por inteiro não teria para onde ir, e uma flutuante
-   * na mesma situação move-se à vontade. O reancorar quando a área muda
-   * continua a garantir que nenhuma se perde fora do ecrã.
-   *
-   * Presa à área útil não fica, mas representável tem de ficar: a caixa segue
-   * direta para o renderizador e uma aresta que transborde é recusada pelo
-   * pixman.
-   */
   box = leme_layout_saturate_box(box);
   if (group->root == view) {
     const int delta_x = leme_sticky_delta(box.x, view->box.x);
@@ -997,11 +987,6 @@ static bool leme_sticky_focusable_on(const struct leme_view *view,
          leme_ownership_effective_output(view) == output;
 }
 
-/*
- * Uma vista presa não pertence a nenhuma tag, por isso as travessias de
- * foco que percorrem tag->views nunca lhe chegam. Este candidato é a porta de
- * entrada delas.
- */
 struct leme_view *leme_sticky_focus_candidate(struct leme_server *server,
                                               struct leme_output *output) {
   struct leme_sticky_group *group;

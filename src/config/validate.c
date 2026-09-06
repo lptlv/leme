@@ -233,10 +233,10 @@ bool leme_config_validate(const struct leme_config *config, char **error) {
   size_t previous;
   bool have_common = false;
 
-  if (config == NULL || config->initial_tags == 0 ||
-      config->initial_tags > config->max_tags) {
+  if (config == NULL || config->initial_tags == 0 || config->max_tags == 0 ||
+      config->max_tags > 64 || config->initial_tags > config->max_tags) {
     leme_config_set_error(
-        error, "config: initial_tags must be between 1 and max_tags");
+        error, "config: initial_tags must be between 1 and max_tags (max 64)");
     return false;
   }
   if (config->gap < 0 || config->border_width < 0 ||
@@ -249,6 +249,48 @@ bool leme_config_validate(const struct leme_config *config, char **error) {
   if (config->cursor.size <= 0 || config->cursor.size > LEME_CURSOR_SIZE_MAX) {
     leme_config_set_error(error, "config: cursor size must be between 1 and %d",
                           LEME_CURSOR_SIZE_MAX);
+    return false;
+  }
+  if (config->gestures.workspace_switch.mode != LEME_WORKSPACE_GESTURE_SINGLE &&
+      config->gestures.workspace_switch.mode != LEME_WORKSPACE_GESTURE_SCRUB &&
+      config->gestures.workspace_switch.mode != LEME_WORKSPACE_GESTURE_FREE) {
+    leme_config_set_error(error, "config: invalid gestures workspace_switch mode");
+    return false;
+  }
+  if (config->gestures.workspace_switch.fingers == 2 ||
+      (config->gestures.workspace_switch.fingers != 0 &&
+       config->gestures.workspace_switch.fingers < 3)) {
+    leme_config_set_error(
+        error, "config: invalid gestures workspace_switch fingers");
+    return false;
+  }
+  if (!isfinite(config->gestures.workspace_switch.distance) ||
+      config->gestures.workspace_switch.distance <= 0.0) {
+    leme_config_set_error(
+        error,
+        "config: gestures workspace_switch distance must be greater than zero");
+    return false;
+  }
+  if (!isfinite(config->gestures.workspace_switch.threshold) ||
+      !(config->gestures.workspace_switch.threshold > 0.0 &&
+        config->gestures.workspace_switch.threshold < 1.0)) {
+    leme_config_set_error(
+        error,
+        "config: gestures workspace_switch threshold must be between 0 and 1");
+    return false;
+  }
+  if (!isfinite(config->gestures.workspace_switch.deceleration) ||
+      !(config->gestures.workspace_switch.deceleration > 0.0 &&
+        config->gestures.workspace_switch.deceleration < 1.0)) {
+    leme_config_set_error(
+        error,
+        "config: gestures workspace_switch deceleration must be between 0 and 1");
+    return false;
+  }
+  if (config->gestures.workspace_switch.velocity_window_ms == 0) {
+    leme_config_set_error(
+        error,
+        "config: gestures workspace_switch velocity_window must be greater than zero");
     return false;
   }
   if (!leme_config_validate_outputs(config, error)) {

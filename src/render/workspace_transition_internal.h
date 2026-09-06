@@ -22,4 +22,7 @@ leme_render_workspace_transition_prepare_with_ops(
     enum leme_tag_change_direction direction,
     const struct leme_workspace_transition_ops *ops);
 
+struct leme_animation_spring leme_workspace_gesture_spring(
+    const struct leme_workspace_animation_settings *settings);
+
 #endif

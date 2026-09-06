@@ -329,6 +329,15 @@ struct leme_config *leme_config_defaults(void) {
   config->max_tags = 9;
   config->drop_mode = LEME_DROP_MODE_SIMPLE;
   config->cursor.size = LEME_CURSOR_SIZE_DEFAULT;
+  config->gestures.workspace_switch =
+      (struct leme_workspace_switch_gesture_settings){
+          .mode = LEME_WORKSPACE_GESTURE_SINGLE,
+          .fingers = 3,
+          .distance = 300.0,
+          .threshold = 0.5,
+          .deceleration = 0.997,
+          .velocity_window_ms = 150,
+      };
   config->publication.activation = LEME_ACTIVATION_FOLLOW;
   config->config_errors = (struct leme_config_errors){
       .show = true,
@@ -418,9 +427,5 @@ const char *leme_config_path(void) {
   if (access(legacy, R_OK) == 0) {
     return legacy;
   }
-  /*
-   * Sem ficheiro nenhum, devolve o nome recomendado para que o erro de
-   * "não encontrado" mostre a grafia que se deve usar.
-   */
   return preferred;
 }

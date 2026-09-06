@@ -280,6 +280,7 @@ void leme_server_finish(struct leme_server *server) {
   if (server == NULL || server->display == NULL) {
     return;
   }
+  leme_input_workspace_gesture_cancel(server);
   leme_xwayland_finish(server);
   if (server->display != NULL) {
     wl_display_destroy_clients(server->display);

@@ -24,7 +24,8 @@ struct wlr_surface *leme_view_surface(const struct leme_view *view) {
   if (view == NULL) {
     return NULL;
   }
-  if (view->kind == LEME_VIEW_XDG && view->xdg_toplevel != NULL) {
+  if (view->kind == LEME_VIEW_XDG && view->xdg_toplevel != NULL &&
+      view->xdg_toplevel->base != NULL) {
     return view->xdg_toplevel->base->surface;
   }
   if (view->kind == LEME_VIEW_XWAYLAND && view->xwayland_surface != NULL) {
@@ -74,7 +75,7 @@ struct leme_view *leme_view_from_surface(struct leme_server *server,
 
 void leme_view_set_activated(struct leme_view *view, bool activated) {
   if (view != NULL && view->kind == LEME_VIEW_XDG &&
-      view->xdg_toplevel != NULL) {
+      view->xdg_toplevel != NULL && view->xdg_toplevel->base != NULL) {
     wlr_xdg_toplevel_set_activated(view->xdg_toplevel, activated);
   } else if (view != NULL && view->kind == LEME_VIEW_XWAYLAND &&
              view->xwayland_surface != NULL) {
@@ -110,7 +111,7 @@ void leme_view_configure(struct leme_view *view, struct leme_box box) {
     (*view->server->scratchpads.render_configure_count)++;
   }
   if (view != NULL && view->kind == LEME_VIEW_XDG &&
-      view->xdg_toplevel != NULL) {
+      view->xdg_toplevel != NULL && view->xdg_toplevel->base != NULL) {
     wlr_xdg_toplevel_set_size(view->xdg_toplevel, box.width, box.height);
   } else if (view != NULL && view->kind == LEME_VIEW_XWAYLAND &&
              view->xwayland_surface != NULL) {

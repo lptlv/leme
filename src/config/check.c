@@ -22,10 +22,6 @@ int leme_config_check(const char *path, FILE *stream) {
   }
   config = leme_config_load(path, &error);
   if (config == NULL) {
-    /*
-     * Os erros de sintaxe já trazem a mudança de linha final; os
-     * restantes não, por isso a falta é reposta aqui.
-     */
     if (error == NULL) {
       fprintf(stream, "%s: the configuration could not be read\n", path);
     } else {

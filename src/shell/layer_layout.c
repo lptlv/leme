@@ -76,8 +76,6 @@ void leme_layer_arrange(struct leme_server *server) {
     }
 
     output->usable_box = usable;
-    /* As fracções nomeadas são política de exibição. Nesta costura
-     * final da área útil, preserva-se a caixa actual e só se limita. */
     leme_scratchpad_handle_usable_area(output);
     leme_sticky_handle_usable_area(output);
     if (!leme_layer_box_equal(previous, usable)) {

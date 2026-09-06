@@ -130,10 +130,6 @@ bool leme_layout_resize_drag_begin(struct leme_layout_node *root,
                                    struct leme_layout_resize_drag *drag);
 bool leme_layout_resize_drag_update(struct leme_layout_resize_drag *drag,
                                     int dx, int dy);
-/*
- * Puxa a origem para trás o suficiente para a aresta oposta caber num int.
- * Não prende a caixa à área útil: isso é política de quem chama.
- */
 struct leme_box leme_layout_saturate_box(struct leme_box box);
 struct leme_box leme_layout_move_box(struct leme_box box,
                                      enum leme_direction direction, int amount);

@@ -1,5 +1,6 @@
 #include "render/animation.h"
 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdlib.h>
@@ -149,8 +150,6 @@ struct leme_animation {
   bool finishing;
 };
 
-/* O instantâneo morre antes de done(): o sujeito nunca lhe toca depois. */
-/* Quem chama já desligou esta animação do gestor. */
 static void leme_animation_release(struct leme_animation *animation) {
   leme_animation_snapshot_destroy(animation->snapshot);
   if (animation->subject.done != NULL) {
@@ -174,6 +173,12 @@ static int leme_animation_mix(int from, int to, double progress) {
   return (int)mixed;
 }
 
+static int leme_animation_mix_extent(int from, int to, double progress) {
+  const int mixed = leme_animation_mix(from, to, progress);
+
+  return mixed < 0 ? 0 : mixed;
+}
+
 struct leme_animation_frame
 leme_animation_frame_at(const struct leme_animation_spec *spec,
                         double geometry_progress, double opacity_progress) {
@@ -184,17 +189,227 @@ leme_animation_frame_at(const struct leme_animation_spec *spec,
                                       geometry_progress),
               .y = leme_animation_mix(spec->from.y, spec->to.y,
                                       geometry_progress),
-              .width = leme_animation_mix(spec->from.width, spec->to.width,
-                                          geometry_progress),
-              .height = leme_animation_mix(spec->from.height, spec->to.height,
-                                           geometry_progress),
+              .width = leme_animation_mix_extent(
+                  spec->from.width, spec->to.width, geometry_progress),
+              .height = leme_animation_mix_extent(
+                  spec->from.height, spec->to.height, geometry_progress),
           },
       .opacity = spec->from_opacity +
                  (spec->to_opacity - spec->from_opacity) * opacity_progress,
+      .scalar = spec->from_scalar +
+                (spec->to_scalar - spec->from_scalar) * geometry_progress,
   };
 }
 
-/* Um gestor a zeros conta como vazio: há testes que forjam o servidor. */
+static double
+leme_animation_spring_beta(const struct leme_animation_spring *spring) {
+  return spring->damping_ratio * sqrt(spring->stiffness);
+}
+
+static uint32_t leme_animation_seconds_to_ms(double seconds) {
+  const double ms = ceil(seconds * 1000.0);
+
+  if (!isfinite(ms) || ms <= 0.0) {
+    return 0;
+  }
+  if (ms >= (double)LEME_ANIMATION_SPRING_SETTLE_MAX_MS) {
+    return LEME_ANIMATION_SPRING_SETTLE_MAX_MS;
+  }
+  return (uint32_t)ms;
+}
+
+double
+leme_animation_spring_displacement_at(const struct leme_animation_spring *spring,
+                                      double displacement, double velocity,
+                                      double seconds) {
+  if (spring == NULL || !isfinite(displacement) || !isfinite(velocity) ||
+      !isfinite(seconds) || !(spring->stiffness > 0.0) ||
+      !(spring->damping_ratio >= 0.0) || !(spring->epsilon > 0.0)) {
+    return isfinite(displacement) ? displacement : 0.0;
+  }
+  if (seconds <= 0.0) {
+    return displacement;
+  }
+  if (displacement == 0.0 && velocity == 0.0) {
+    return 0.0;
+  }
+
+  const double beta = leme_animation_spring_beta(spring);
+  const double omega0 = sqrt(spring->stiffness);
+  const double slope = beta * displacement + velocity;
+
+  if (fabs(beta - omega0) <= (double)FLT_EPSILON) {
+    return exp(-beta * seconds) * (displacement + slope * seconds);
+  }
+  if (beta < omega0) {
+    const double omega1 = sqrt(omega0 * omega0 - beta * beta);
+    return exp(-beta * seconds) *
+           (displacement * cos(omega1 * seconds) +
+            (slope / omega1) * sin(omega1 * seconds));
+  }
+  {
+    const double omega2 = sqrt(beta * beta - omega0 * omega0);
+    const double coefficient = slope / omega2;
+    return (displacement + coefficient) / 2.0 * exp((omega2 - beta) * seconds) +
+           (displacement - coefficient) / 2.0 * exp(-(omega2 + beta) * seconds);
+  }
+}
+
+uint32_t
+leme_animation_spring_displacement_duration_ms(
+    const struct leme_animation_spring *spring, double displacement,
+    double velocity) {
+  double beta;
+  double omega0;
+  double slope;
+  double alpha;
+  double t_hi;
+  double t_ext = -1.0;
+  double lo;
+  double hi;
+  int iteration;
+
+  if (spring == NULL || !isfinite(displacement) || !isfinite(velocity) ||
+      !(spring->stiffness > 0.0) || !(spring->damping_ratio >= 0.0) ||
+      !(spring->epsilon > 0.0)) {
+    return 0;
+  }
+  if (displacement == 0.0 && velocity == 0.0) {
+    return 0;
+  }
+  beta = leme_animation_spring_beta(spring);
+  omega0 = sqrt(spring->stiffness);
+  if (!(beta > (double)FLT_EPSILON)) {
+    return 0;
+  }
+  slope = beta * displacement + velocity;
+  if (beta < omega0) {
+    const double omega1 = sqrt(omega0 * omega0 - beta * beta);
+    const double a = hypot(displacement, slope / omega1);
+    if (a <= spring->epsilon) {
+      return 0;
+    }
+    const double envelope_epsilon = spring->epsilon / a;
+    double t_settle = -log(envelope_epsilon) / beta;
+    return leme_animation_seconds_to_ms(t_settle);
+  }
+
+  alpha = fabs(beta - omega0) <= (double)FLT_EPSILON
+              ? beta
+              : beta - sqrt(beta * beta - omega0 * omega0);
+  if (alpha <= (double)FLT_EPSILON) {
+    alpha = beta * 0.01;
+  }
+
+  if (fabs(beta - omega0) <= (double)FLT_EPSILON) {
+    if (fabs(beta * slope) > 1e-9) {
+      const double candidate = velocity / (beta * slope);
+      if (candidate > 0.0) {
+        t_ext = candidate;
+      }
+    }
+  } else {
+    const double omega2 = sqrt(beta * beta - omega0 * omega0);
+    const double coeff = slope / omega2;
+    const double c1 = (displacement + coeff) / 2.0;
+    const double c2 = (displacement - coeff) / 2.0;
+    const double r1 = -beta + omega2;
+    const double r2 = -beta - omega2;
+
+    if (fabs(c1 * r1) > 1e-9) {
+      const double ratio = -(c2 * r2) / (c1 * r1);
+      if (ratio > 0.0) {
+        const double candidate = log(ratio) / (r1 - r2);
+        if (candidate > 0.0) {
+          t_ext = candidate;
+        }
+      }
+    }
+  }
+
+  double scale = fabs(displacement);
+  if (scale < spring->epsilon) {
+    scale = spring->epsilon;
+  }
+  if (t_ext > 0.0) {
+    const double x_ext = fabs(leme_animation_spring_displacement_at(
+        spring, displacement, velocity, t_ext));
+    if (x_ext > scale) {
+      scale = x_ext;
+    }
+  }
+
+  if (scale <= spring->epsilon && t_ext <= 0.0) {
+    return 0;
+  }
+
+  t_hi = -log(spring->epsilon / scale) / alpha;
+  if (t_hi < 0.1) {
+    t_hi = 0.1;
+  }
+
+  while ((t_hi < t_ext ||
+          fabs(leme_animation_spring_displacement_at(spring, displacement,
+                                                    velocity, t_hi)) >
+              spring->epsilon) &&
+         t_hi < 10.0) {
+    t_hi *= 1.5;
+  }
+
+  if (t_ext > 0.0) {
+    if (fabs(leme_animation_spring_displacement_at(spring, displacement,
+                                                   velocity, t_ext)) >
+        spring->epsilon) {
+      lo = t_ext;
+      hi = t_hi;
+    } else if (fabs(displacement) <= spring->epsilon) {
+      return 0;
+    } else {
+      lo = 0.0;
+      hi = t_ext;
+    }
+  } else {
+    if (fabs(displacement) <= spring->epsilon) {
+      return 0;
+    }
+    lo = 0.0;
+    hi = t_hi;
+  }
+
+  for (iteration = 0; iteration < 32; iteration++) {
+    const double mid = (lo + hi) / 2.0;
+    const double y =
+        leme_animation_spring_displacement_at(spring, displacement, velocity, mid);
+
+    if (fabs(y) > spring->epsilon) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return leme_animation_seconds_to_ms(hi);
+}
+
+double
+leme_animation_spring_value_at(const struct leme_animation_spring *spring,
+                               double initial_velocity, double seconds) {
+  if (spring == NULL || seconds <= 0.0) {
+    return 0.0;
+  }
+  return 1.0 + leme_animation_spring_displacement_at(
+      spring, -1.0, initial_velocity, seconds);
+}
+
+uint32_t
+leme_animation_spring_duration_ms(const struct leme_animation_spring *spring,
+                                  double initial_velocity) {
+  if (spring == NULL) {
+    return 0;
+  }
+  return leme_animation_spring_displacement_duration_ms(
+      spring, -1.0, initial_velocity);
+}
+
 static bool
 leme_animation_manager_ready(const struct leme_animation_manager *manager) {
   return manager != NULL && manager->animations.next != NULL;
@@ -222,8 +437,6 @@ leme_animation_manager_take_finishing(struct leme_animation_manager *manager) {
   struct leme_animation *pending = NULL;
   struct leme_animation **pending_tail = &pending;
 
-  /* O analisador não modela wl_list_remove() a actualizar a cabeça
-   * intrusiva entre lotes; os testes de reentrância com ASan passam aqui. */
   wl_list_for_each_safe(animation, next, &manager->animations,
                         link) { // NOLINT(clang-analyzer-unix.Malloc)
     if (animation->finishing) {
@@ -244,8 +457,6 @@ leme_animation_manager_drain(struct leme_animation_manager *manager) {
     return;
   }
   manager->dispatching = true;
-  /* Desliga-se um lote inteiro antes de done(): um callback pode escolher
-   * trabalho activo, mas não invalida outro nó da cadeia já desligada. */
   while ((pending = leme_animation_manager_take_finishing(manager)) != NULL) {
     while (pending != NULL) {
       struct leme_animation *animation = pending;
@@ -285,6 +496,22 @@ void leme_animation_manager_finish_data(struct leme_animation_manager *manager,
   leme_animation_manager_drain(manager);
 }
 
+void leme_animation_manager_cancel_data(struct leme_animation_manager *manager,
+                                        const void *data) {
+  struct leme_animation *animation;
+  struct leme_animation *temporary;
+
+  if (!leme_animation_manager_ready(manager) || data == NULL) {
+    return;
+  }
+  wl_list_for_each_safe(animation, temporary, &manager->animations, link) {
+    if (animation->subject.data == data) {
+      wl_list_remove(&animation->link);
+      free(animation);
+    }
+  }
+}
+
 void leme_animation_manager_finish_owner(struct leme_animation_manager *manager,
                                          const void *owner) {
   struct leme_animation *animation;
@@ -300,21 +527,42 @@ void leme_animation_manager_finish_owner(struct leme_animation_manager *manager,
   leme_animation_manager_drain(manager);
 }
 
-/*
- * A posse do instantâneo passa para o motor. Se a animação não arrancar, o
- * caminho abandon destrói-o e corre done() na mesma: a restauração do
- * sujeito acontece exactamente uma vez em todos os caminhos.
- */
+bool leme_animation_manager_active_for_owner(
+    struct leme_animation_manager *manager, const void *owner) {
+  struct leme_animation *animation;
+
+  if (!leme_animation_manager_ready(manager) || owner == NULL) {
+    return false;
+  }
+  wl_list_for_each(animation, &manager->animations, link) {
+    if (animation->subject.owner == owner || animation->subject.owner == NULL) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void leme_animation_run(struct leme_animation_manager *manager,
                         struct wlr_scene_tree *snapshot,
                         const struct leme_animation_spec *spec,
                         const struct leme_animation_subject *subject) {
   struct leme_animation *animation;
+  uint32_t duration;
 
   if (snapshot == NULL || spec == NULL || subject == NULL) {
     goto abandon;
   }
-  if (!leme_animation_manager_ready(manager) || spec->duration_ms == 0) {
+  if (spec->kind == LEME_ANIMATION_KIND_SPRING) {
+    duration = spec->scalar_spring
+                   ? leme_animation_spring_displacement_duration_ms(
+                         &spec->spring, spec->from_scalar - spec->to_scalar,
+                         spec->scalar_initial_velocity)
+                   : leme_animation_spring_duration_ms(&spec->spring,
+                                                       spec->initial_velocity);
+  } else {
+    duration = spec->duration_ms;
+  }
+  if (!leme_animation_manager_ready(manager) || duration == 0) {
     goto abandon;
   }
   animation = calloc(1, sizeof(*animation));
@@ -323,6 +571,7 @@ void leme_animation_run(struct leme_animation_manager *manager,
   }
   animation->snapshot = snapshot;
   animation->spec = *spec;
+  animation->spec.duration_ms = duration;
   animation->subject = *subject;
   clock_gettime(CLOCK_MONOTONIC, &animation->start);
   wl_list_insert(&manager->animations, &animation->link);
@@ -344,9 +593,6 @@ void leme_animation_manager_tick(struct leme_animation_manager *manager,
       manager->dispatching) {
     return;
   }
-  /* Um callback pode terminar-se a si ou a outra animação. Todos os nós
-   * ficam vivos até a iteração parar, e só depois o esvaziamento corre
-   * done() uma única vez. */
   manager->dispatching = true;
   wl_list_for_each_safe(animation, next, &manager->animations, link) {
     double linear;
@@ -363,9 +609,36 @@ void leme_animation_manager_tick(struct leme_animation_manager *manager,
       animation->finishing = true;
       continue;
     }
-    geometry = leme_animation_curve_at(&animation->spec.curve, linear);
-    opacity = leme_animation_curve_at(&animation->spec.opacity_curve, linear);
-    frame = leme_animation_frame_at(&animation->spec, geometry, opacity);
+    if (animation->spec.kind == LEME_ANIMATION_KIND_SPRING &&
+        animation->spec.scalar_spring) {
+      const double elapsed_seconds =
+          (double)animation->spec.duration_ms * linear / 1000.0;
+      frame = leme_animation_frame_at(&animation->spec, 0.0, 0.0);
+      frame.scalar = animation->spec.to_scalar +
+          leme_animation_spring_displacement_at(
+              &animation->spec.spring,
+              animation->spec.from_scalar - animation->spec.to_scalar,
+              animation->spec.scalar_initial_velocity, elapsed_seconds);
+      if (!isfinite(frame.scalar)) {
+        animation->finishing = true;
+        continue;
+      }
+    } else if (animation->spec.kind == LEME_ANIMATION_KIND_SPRING) {
+      geometry = leme_animation_spring_value_at(
+          &animation->spec.spring, animation->spec.initial_velocity,
+          linear * (double)animation->spec.duration_ms / 1000.0);
+      if (isnan(geometry)) {
+        geometry = 1.0;
+        opacity = 1.0;
+      } else {
+        opacity = geometry < 0.0 ? 0.0 : (geometry > 1.0 ? 1.0 : geometry);
+      }
+      frame = leme_animation_frame_at(&animation->spec, geometry, opacity);
+    } else {
+      geometry = leme_animation_curve_at(&animation->spec.curve, linear);
+      opacity = leme_animation_curve_at(&animation->spec.opacity_curve, linear);
+      frame = leme_animation_frame_at(&animation->spec, geometry, opacity);
+    }
     if (animation->subject.apply != NULL) {
       animation->subject.apply(animation->subject.data, &frame);
     }
@@ -398,10 +671,6 @@ static double leme_animation_bezier(double a, double b, double t) {
          t * t * t;
 }
 
-/*
- * A curva é paramétrica em t, mas o tempo anda em x. Procura-se o t cujo
- * x bate com o progresso e devolve-se o y correspondente.
- */
 double leme_animation_curve_at(const struct leme_animation_curve *curve,
                                double t) {
   double low = 0.0;

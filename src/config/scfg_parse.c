@@ -27,10 +27,6 @@ static void leme_scfg_advance(struct leme_scfg_parser *parser) {
   }
 }
 
-/*
- * A directiva entra no bloco antes de ser preenchida. Se faltar memória a
- * meio, fica lá meio construída e o leme_scfg_result_finish liberta-a.
- */
 static bool leme_scfg_block_push(struct leme_scfg_block *block,
                                  struct leme_scfg_directive **directive) {
   struct leme_scfg_directive *entries = realloc(

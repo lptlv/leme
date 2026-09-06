@@ -77,6 +77,61 @@ A window opens or closes without animation when:
 A running window animation ends immediately when the displayed tag changes or
 the session locks. An animation never delays a window from opening or closing.
 
+## Springs
+
+A window event or the workspace transition may use a spring instead of a
+duration and curve:
+
+```scfg
+animation {
+    open {
+        spring {
+            damping_ratio 0.8
+            stiffness 900
+            epsilon 0.0001
+        }
+    }
+    workspace {
+        spring {
+            damping_ratio 1.0
+            stiffness 800
+        }
+    }
+}
+```
+
+| Key | Values | Default |
+| --- | --- | --- |
+| `damping_ratio` | decimal greater than `0` | `1.0` |
+| `stiffness` | decimal greater than `0` | `800` |
+| `epsilon` | decimal above `0` and below `1`, floored at `0.000001` | `0.0001` |
+
+A spring has no duration of its own. It runs until its amplitude falls below
+`epsilon`, and that settle time is computed once when the animation starts. A
+`damping_ratio` below `1.0` overshoots and springs back; `1.0` is critically
+damped and reaches the target without overshooting; above `1.0` approaches
+more slowly, still without overshooting.
+
+Three combinations are rejected rather than clamped, each with a diagnostic:
+
+- `damping_ratio 0`, because an undamped spring never settles and would hold
+  an output awake indefinitely.
+- `epsilon` at `1.0` or above, because the amplitude starts below it and the
+  spring would be considered settled before it moved — the animation would
+  simply not run.
+- Parameters that settle slower than the `duration` maximum of 1000 ms. A weak
+  spring such as `stiffness 8` takes over three seconds, and the diagnostic
+  names the settle time it computed.
+
+`epsilon` is a cost control as much as a feel control. It is measured in
+normalised progress, so `0.0001` is roughly a fifth of a pixel on a 1920-wide
+slide. Lowering it makes the compositor animate motion too small to see, for
+hundreds of extra frames.
+
+An event with a `spring` block ignores `duration`, `curve` and
+`opacity_curve`. An event without one is unchanged, so existing configurations
+keep their present behaviour.
+
 ## Workspace transitions
 
 Tag switching remains instant unless `animation` contains a `workspace` block.
@@ -89,7 +144,6 @@ animation {
         style glide_fade
         distance 0.15
         curve ease_out
-        opacity_curve ease_out
     }
 }
 ```
@@ -112,12 +166,12 @@ animation {
 | `style` | `glide_fade` or `full_slide` | `glide_fade` | selects the transition style |
 | `distance` | decimal from `0.0` through `1.0` | `0.15` | sets glide travel as a fraction of output width |
 | `curve` | preset name or four decimal control points | `ease_out` | shapes movement |
-| `opacity_curve` | same values as `curve` | value of `curve` | shapes the cross-fade |
 
 `glide_fade` moves the source and destination windows by `distance` times the
 output width while cross-fading them. `full_slide` moves them by one complete
-output width and does not fade. `distance` and `opacity_curve` are accepted in
-a `full_slide` block but do not affect that style.
+output width and does not fade. `distance` is accepted in a `full_slide` block
+but does not affect that style. In `glide_fade`, opacity follows transition
+travel directly.
 
 An empty `workspace { }` block uses all defaults in the table. `duration 0`
 disables workspace transitions without a diagnostic. An invalid style,

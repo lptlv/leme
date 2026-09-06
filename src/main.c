@@ -41,11 +41,6 @@ int main(int argc, char *argv[]) {
         leme_usage(stderr);
         return 2;
       }
-      /*
-       * Um caminho dado é usado tal como vem. Só a ausência dele
-       * consulta leme_config_path, para que a verificação incida
-       * sobre o ficheiro que a sessão carregaria.
-       */
       return leme_config_check(argc == 3 ? argv[2] : leme_config_path(),
                                stderr);
     }

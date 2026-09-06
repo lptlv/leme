@@ -13,6 +13,7 @@
 #include "render/workspace_transition.h"
 
 #include <assert.h>
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -247,7 +248,8 @@ leme_tags_set_focus_state(struct leme_tags *tags, uint16_t id,
   if (tags->focused_id == id && tags->focused_is_candidate == is_candidate) {
     return true;
   }
-  transition = tags->output == NULL
+  transition = tags->output == NULL ||
+                       (tags->server != NULL && tags->server->gesture.engaged)
                    ? NULL
                    : leme_render_workspace_transition_prepare(
                          tags->output, tags->focused_id, id, direction);
@@ -462,8 +464,29 @@ struct leme_tag *leme_tags_focus_id(struct leme_tags *tags, uint16_t id) {
   return leme_tags_focus_id_direction(tags, id, direction);
 }
 
+static uint16_t leme_tags_last_materialized(const struct leme_tags *tags) {
+  uint16_t id;
+
+  if (tags == NULL || tags->table == NULL) {
+    return 1;
+  }
+  for (id = tags->max_tags; id >= 1; id--) {
+    if (tags->table[id] != NULL) {
+      return id;
+    }
+  }
+  return 1;
+}
+
+static uint16_t leme_tags_backward_wrap_id(const struct leme_tags *tags) {
+  uint16_t last = leme_tags_last_materialized(tags);
+
+  return last < tags->max_tags ? (uint16_t)(last + 1) : tags->max_tags;
+}
+
 struct leme_tag *leme_tags_step(struct leme_tags *tags,
                                 enum leme_tag_change_direction direction) {
+  uint16_t wrap_id;
   uint16_t id;
   uint16_t count;
   bool is_candidate;
@@ -472,10 +495,11 @@ struct leme_tag *leme_tags_step(struct leme_tags *tags,
       direction != LEME_TAG_CHANGE_BACKWARD) {
     return NULL;
   }
+  wrap_id = leme_tags_backward_wrap_id(tags);
   if (tags->focused_is_candidate) {
     for (count = 0, id = tags->focused_id; count < tags->max_tags; count++) {
       id = direction > 0 ? (id == tags->max_tags ? 1 : id + 1)
-                         : (id == 1 ? tags->max_tags : id - 1);
+                         : (id == 1 ? wrap_id : id - 1);
       if (tags->table[id] != NULL) {
         leme_tags_set_focus_state(tags, id, false, true, direction);
         return tags->table[id];
@@ -485,7 +509,7 @@ struct leme_tag *leme_tags_step(struct leme_tags *tags,
   }
   id = direction > 0
            ? (tags->focused_id == tags->max_tags ? 1 : tags->focused_id + 1)
-           : (tags->focused_id == 1 ? tags->max_tags : tags->focused_id - 1);
+           : (tags->focused_id == 1 ? wrap_id : tags->focused_id - 1);
   is_candidate = tags->table[id] == NULL;
   leme_tags_set_focus_state(tags, id, is_candidate, true, direction);
   return is_candidate ? NULL : tags->table[id];
@@ -493,15 +517,18 @@ struct leme_tag *leme_tags_step(struct leme_tags *tags,
 
 uint16_t leme_tags_adjacent_id(const struct leme_tags *tags,
                                enum leme_tag_change_direction direction) {
+  uint16_t wrap_id;
+
   if (tags == NULL ||
       (direction != LEME_TAG_CHANGE_FORWARD &&
        direction != LEME_TAG_CHANGE_BACKWARD) ||
       tags->focused_id == 0 || tags->focused_id > tags->max_tags) {
     return 0;
   }
+  wrap_id = leme_tags_backward_wrap_id(tags);
   return direction > 0
              ? (tags->focused_id == tags->max_tags ? 1 : tags->focused_id + 1)
-             : (tags->focused_id == 1 ? tags->max_tags : tags->focused_id - 1);
+             : (tags->focused_id == 1 ? wrap_id : tags->focused_id - 1);
 }
 
 bool leme_tags_focus_last(struct leme_tags *tags) {
@@ -1164,13 +1191,17 @@ void leme_tags_remove_view(struct leme_view *view) {
 }
 
 void leme_tags_refresh_visibility(struct leme_tags *tags) {
-  struct leme_tag *current =
-      tags->focused_is_candidate ? NULL : tags->table[tags->focused_id];
+  struct leme_tag *current;
   struct leme_view *fullscreen = NULL;
   struct leme_view *focus = NULL;
   uint16_t id;
   struct wl_list *link;
   struct leme_view *view;
+
+  if (tags == NULL) {
+    return;
+  }
+  current = tags->focused_is_candidate ? NULL : tags->table[tags->focused_id];
 
   if (current != NULL) {
     for (link = current->views.next; link != &current->views;
@@ -1216,8 +1247,9 @@ void leme_tags_refresh_visibility(struct leme_tags *tags) {
   }
 }
 
-size_t leme_tags_navigable(const struct leme_tags *tags, uint16_t *ids,
-                           size_t capacity) {
+static size_t leme_tags_collect_members(const struct leme_tags *tags,
+                                        uint16_t candidate, uint16_t *ids,
+                                        size_t capacity) {
   size_t count = 0;
   uint16_t id;
 
@@ -1225,10 +1257,12 @@ size_t leme_tags_navigable(const struct leme_tags *tags, uint16_t *ids,
     return 0;
   }
   for (id = 1; id <= tags->max_tags; id++) {
-    bool navigable = tags->table[id] != NULL ||
-                     (tags->focused_is_candidate && tags->focused_id == id);
+    const bool member = tags->table[id] != NULL ||
+                        (tags->focused_is_candidate &&
+                         tags->focused_id == id) ||
+                        id == candidate;
 
-    if (!navigable) {
+    if (!member) {
       continue;
     }
     if (ids != NULL && count < capacity) {
@@ -1237,4 +1271,102 @@ size_t leme_tags_navigable(const struct leme_tags *tags, uint16_t *ids,
     count++;
   }
   return count;
+}
+
+size_t leme_tags_navigable(const struct leme_tags *tags, uint16_t *ids,
+                           size_t capacity) {
+  return leme_tags_collect_members(tags, 0, ids, capacity);
+}
+
+double leme_tags_ring_wrap(double position, size_t count) {
+  double wrapped;
+
+  if (!isfinite(position) || count <= 1) {
+    return 0.0;
+  }
+  wrapped = fmod(position, (double)count);
+  if (wrapped < 0.0) {
+    wrapped += (double)count;
+  }
+  if (wrapped >= (double)count || !isfinite(wrapped)) {
+    wrapped = 0.0;
+  }
+  return wrapped;
+}
+
+size_t leme_tags_ring(const struct leme_tags *tags,
+                      enum leme_tag_change_direction direction, uint16_t *ids,
+                      size_t capacity) {
+  uint16_t candidate = 0;
+  size_t count;
+  uint16_t wrap_id;
+
+  if (tags == NULL || tags->table == NULL || tags->focused_id == 0 ||
+      tags->focused_id > tags->max_tags) {
+    return 0;
+  }
+  wrap_id = leme_tags_backward_wrap_id(tags);
+  if (!tags->focused_is_candidate &&
+      (direction == LEME_TAG_CHANGE_FORWARD ||
+       direction == LEME_TAG_CHANGE_BACKWARD)) {
+    uint16_t walk = tags->focused_id;
+    size_t step;
+
+    for (step = 0; step < tags->max_tags; step++) {
+      walk = direction > 0
+                 ? (walk == tags->max_tags ? 1 : (uint16_t)(walk + 1))
+                 : (walk == 1 ? wrap_id : (uint16_t)(walk - 1));
+      if (tags->table[walk] == NULL) {
+        candidate = walk;
+        break;
+      }
+    }
+  }
+  count = leme_tags_collect_members(tags, candidate, ids, capacity);
+  return count > capacity ? capacity : count;
+}
+
+bool leme_tags_ring_index(const struct leme_tags *tags, uint16_t tag_id,
+                          size_t *index_out) {
+  uint16_t ids[LEME_TAGS_RING_MAX];
+  size_t count;
+  size_t i;
+
+  if (tags == NULL) {
+    return false;
+  }
+  count = leme_tags_ring(tags, LEME_TAG_CHANGE_FORWARD, ids,
+                         LEME_ARRAY_LENGTH(ids));
+  for (i = 0; i < count; i++) {
+    if (ids[i] == tag_id) {
+      if (index_out != NULL) {
+        *index_out = i;
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+double leme_tags_position(const struct leme_tags *tags) {
+  size_t index = 0;
+
+  if (tags == NULL) {
+    return 0.0;
+  }
+  if (tags->position_active) {
+    return tags->position;
+  }
+  if (leme_tags_ring_index(tags, tags->focused_id, &index)) {
+    return (double)index;
+  }
+  return 0.0;
+}
+
+void leme_tags_position_set(struct leme_tags *tags, double position) {
+  if (tags == NULL) {
+    return;
+  }
+  tags->position = position;
+  tags->position_active = true;
 }

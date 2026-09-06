@@ -93,11 +93,6 @@ bool leme_scfg_error_add(struct leme_scfg_result *result,
   return true;
 }
 
-/*
- * O '#' só abre comentário quando é seguido de espaço ou fim de linha. As
- * cores escrevem-se #RRGGBB sem aspas, e sem esta condição a linha
- * border_active #296bb8 perderia o valor.
- */
 static bool leme_scfg_is_comment(const struct leme_scfg_source *source,
                                  size_t index) {
   char next;
@@ -253,11 +248,6 @@ bool leme_scfg_lex(const struct leme_scfg_source *source,
       continue;
     }
     span = (struct leme_scfg_span){.offset = lexer.index, .length = 1};
-    /*
-     * O ';' termina uma directiva tal como a mudança de linha. Sem ele,
-     * { width 0.5; height 0.6 } seria uma só directiva com três
-     * parâmetros, e um bloco numa linha não serviria para nada.
-     */
     if (value == '\n' || value == ';' || value == '{' || value == '}') {
       enum leme_scfg_token_kind kind = value == '\n' || value == ';'
                                            ? LEME_SCFG_TOKEN_NEWLINE

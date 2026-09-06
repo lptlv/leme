@@ -228,6 +228,29 @@ struct leme_workspace_effect *leme_workspace_effect_create(
   return effect;
 }
 
+static void leme_workspace_restore_leaf(struct leme_workspace_leaf *leaf,
+                                        double opacity);
+
+void leme_workspace_effect_restore(struct leme_workspace_effect *effect) {
+  struct leme_workspace_leaf *leaf;
+
+  if (effect == NULL) {
+    return;
+  }
+  wl_array_for_each(leaf, &effect->outgoing_leaves) {
+    leme_workspace_restore_leaf(leaf, 1.0);
+  }
+  wl_array_for_each(leaf, &effect->incoming_leaves) {
+    leme_workspace_restore_leaf(leaf, 1.0);
+  }
+  if (effect->outgoing != NULL) {
+    wlr_scene_node_set_position(&effect->outgoing->node, 0, 0);
+  }
+  if (effect->incoming != NULL) {
+    wlr_scene_node_set_position(&effect->incoming->node, 0, 0);
+  }
+}
+
 void leme_workspace_effect_destroy(struct leme_workspace_effect *effect) {
   if (effect == NULL) {
     return;
@@ -260,6 +283,8 @@ struct leme_animation_spec leme_workspace_effect_animation_spec(
   spec.duration_ms = settings->duration_ms;
   spec.curve = settings->curve;
   spec.opacity_curve = settings->opacity_curve;
+  spec.kind = settings->kind;
+  spec.spring = settings->spring;
   return spec;
 }
 

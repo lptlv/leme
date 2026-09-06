@@ -28,6 +28,17 @@ struct leme_animation_curve {
   double y2;
 };
 
+struct leme_animation_spring {
+  double damping_ratio;
+  double stiffness;
+  double epsilon;
+};
+
+enum leme_animation_kind {
+  LEME_ANIMATION_KIND_EASING,
+  LEME_ANIMATION_KIND_SPRING,
+};
+
 enum leme_animation_effect {
   LEME_ANIMATION_EFFECT_FADE = 1u << 0,
   LEME_ANIMATION_EFFECT_SCALE = 1u << 1,
@@ -38,6 +49,8 @@ struct leme_animation_settings {
   uint32_t duration_ms;
   struct leme_animation_curve curve;
   struct leme_animation_curve opacity_curve;
+  enum leme_animation_kind kind;
+  struct leme_animation_spring spring;
   uint32_t effects;
   double scale_from;
 };
@@ -52,11 +65,12 @@ struct leme_animation_manager {
 struct leme_animation_frame {
   struct leme_box box;
   double opacity;
+  double scalar;
 };
 
 struct leme_animation_subject {
   void *data;
-  void *owner;
+  const void *owner;
   void (*apply)(void *data, const struct leme_animation_frame *frame);
   void (*done)(void *data);
 };
@@ -66,9 +80,16 @@ struct leme_animation_spec {
   struct leme_box to;
   double from_opacity;
   double to_opacity;
+  double from_scalar;
+  double to_scalar;
   uint32_t duration_ms;
   struct leme_animation_curve curve;
   struct leme_animation_curve opacity_curve;
+  enum leme_animation_kind kind;
+  double initial_velocity;
+  struct leme_animation_spring spring;
+  bool scalar_spring;
+  double scalar_initial_velocity;
 };
 
 struct wlr_scene_tree *leme_animation_snapshot(struct wlr_scene_tree *source,
@@ -85,8 +106,12 @@ void leme_animation_manager_tick(struct leme_animation_manager *manager,
                                  const struct timespec *now);
 bool leme_animation_manager_active(
     const struct leme_animation_manager *manager);
+bool leme_animation_manager_active_for_owner(
+    struct leme_animation_manager *manager, const void *owner);
 void leme_animation_manager_finish_all(struct leme_animation_manager *manager);
 void leme_animation_manager_finish_data(struct leme_animation_manager *manager,
+                                        const void *data);
+void leme_animation_manager_cancel_data(struct leme_animation_manager *manager,
                                         const void *data);
 void leme_animation_manager_finish_owner(struct leme_animation_manager *manager,
                                          const void *owner);
@@ -100,5 +125,19 @@ double leme_animation_curve_at(const struct leme_animation_curve *curve,
                                double t);
 double leme_animation_elapsed(const struct timespec *start,
                               const struct timespec *now, uint32_t duration_ms);
+#define LEME_ANIMATION_SPRING_SETTLE_MAX_MS 10000u
+
+double leme_animation_spring_value_at(
+    const struct leme_animation_spring *spring, double initial_velocity,
+    double seconds);
+uint32_t leme_animation_spring_duration_ms(
+    const struct leme_animation_spring *spring, double initial_velocity);
+
+double leme_animation_spring_displacement_at(
+    const struct leme_animation_spring *spring, double displacement,
+    double velocity, double seconds);
+uint32_t leme_animation_spring_displacement_duration_ms(
+    const struct leme_animation_spring *spring, double displacement,
+    double velocity);
 
 #endif

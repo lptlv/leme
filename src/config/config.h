@@ -159,9 +159,25 @@ struct leme_publication_config {
   enum leme_activation_policy activation;
 };
 
-/*
- * Quais camadas o ecrã inteiro tapa. A sessão bloqueada fica sempre acima.
- */
+enum leme_workspace_gesture_mode {
+  LEME_WORKSPACE_GESTURE_SINGLE,
+  LEME_WORKSPACE_GESTURE_SCRUB,
+  LEME_WORKSPACE_GESTURE_FREE,
+};
+
+struct leme_workspace_switch_gesture_settings {
+  enum leme_workspace_gesture_mode mode;
+  uint32_t fingers;
+  double distance;
+  double threshold;
+  double deceleration;
+  uint32_t velocity_window_ms;
+};
+
+struct leme_gesture_config {
+  struct leme_workspace_switch_gesture_settings workspace_switch;
+};
+
 enum leme_fullscreen_coverage {
   LEME_FULLSCREEN_COVERS_NONE,
   LEME_FULLSCREEN_COVERS_TOP,
@@ -191,6 +207,8 @@ struct leme_workspace_animation_settings {
   double distance;
   struct leme_animation_curve curve;
   struct leme_animation_curve opacity_curve;
+  enum leme_animation_kind kind;
+  struct leme_animation_spring spring;
 };
 
 struct leme_config {
@@ -219,6 +237,7 @@ struct leme_config {
   size_t output_count;
   struct leme_output_policy output_policy;
   struct leme_cursor_config cursor;
+  struct leme_gesture_config gestures;
   struct leme_publication_config publication;
   struct leme_pointer_settings pointer_defaults;
   struct leme_pointer_rule *pointer_rules;

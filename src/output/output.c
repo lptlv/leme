@@ -736,9 +736,6 @@ static bool leme_output_reconcile(struct leme_server *server,
     }
     leme_render_position_output(output);
   }
-  /* Fica de propósito depois de tudo o que pode falhar acima. A
-   * reconciliação também corre no desfazer, por isso o estado de ciclo de
-   * vida só pode ver uma topologia de saídas completa. */
   if (sticky != NULL && *sticky != NULL) {
     leme_sticky_commit_outputs(sticky);
   }
@@ -910,6 +907,9 @@ bool leme_output_set_power(struct leme_output *output, bool on) {
     wlr_log(WLR_ERROR, "leme: refusing to power off fallback output %s", name);
     return false;
   }
+  if (!on) {
+    leme_render_output_animations_finish(output);
+  }
   if (output->wlr_output->enabled == on) {
     output->power_on = on;
     return true;
@@ -1042,10 +1042,6 @@ bool leme_output_set_power(struct leme_output *output, bool on) {
     } else {
       struct wlr_output_state rollback;
 
-      /* Desligar pode falhar a meio de reconstruir a ligação à cena
-       * de outra saída activa. Repõe-se o backend antes de o gestor de
-       * ciclo de vida ver a tentativa, e só depois se reconstrói a
-       * topologia anterior inteira. */
       wlr_output_state_init(&rollback);
       wlr_output_state_set_enabled(&rollback, true);
       rolled_back = wlr_output_test_state(output->wlr_output, &rollback) &&
@@ -1535,6 +1531,9 @@ static void leme_output_handle_destroy(struct wl_listener *listener,
   (void)data;
   successor = leme_output_surviving(server, output);
   leme_input_pointer_grab_cancel(server);
+  if (server != NULL && server->gesture.output == output) {
+    leme_input_workspace_gesture_cancel(server);
+  }
   leme_scratchpad_handle_output_destroy(server, output);
   leme_sticky_handle_output_destroy(server, output, successor);
   leme_render_output_animations_finish(output);

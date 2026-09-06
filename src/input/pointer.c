@@ -8,7 +8,9 @@
 #include "protocols/desktop.h"
 #include "protocols/input.h"
 #include "protocols/session.h"
+#include "render/animation.h"
 #include "render/render.h"
+#include "render/workspace_transition.h"
 #include "shell/layer.h"
 #include "shell/policy.h"
 #include "shell/view.h"
@@ -193,7 +195,6 @@ static void leme_input_pointer_grab_cleanup(struct leme_pointer_grab *grab) {
     }
   }
   grab->mode = LEME_POINTER_GRAB_NONE;
-  /* O configure final tem de sair, senão o cliente fica na caixa antiga. */
   leme_view_set_configure_deferred(grab->view, false);
   grab->view = NULL;
   grab->button = 0;
@@ -478,10 +479,6 @@ static bool leme_input_pointer_grab_start(
   grab->drop_empty = false;
   grab->seat_grab.interface = &leme_pointer_grab_interface;
   grab->seat_grab.data = grab;
-  /*
-   * Um X11 refaz o desenho a cada ConfigureNotify. Durante o arrasto
-   * acumula-se um só por frame; fora dele nada muda.
-   */
   if (view->kind == LEME_VIEW_XWAYLAND) {
     leme_view_set_configure_deferred(view, true);
   }
@@ -706,6 +703,7 @@ void leme_input_apply_pointer_config(struct leme_server *server,
   if (server == NULL || config == NULL || server->cursor == NULL) {
     return;
   }
+  leme_input_workspace_gesture_cancel(server);
   wl_list_for_each(pointer, &server->pointers, link) {
     leme_input_configure_pointer(pointer->device, config);
   }
@@ -717,6 +715,10 @@ static void leme_input_handle_pointer_destroy(struct wl_listener *listener,
   struct leme_server *server = pointer->server;
 
   (void)data;
+  if (server->gesture.pointer != NULL &&
+      &server->gesture.pointer->base == pointer->device) {
+    leme_input_workspace_gesture_cancel(server);
+  }
   wlr_cursor_detach_input_device(server->cursor, pointer->device);
   wl_list_remove(&pointer->destroy.link);
   wl_list_remove(&pointer->link);
@@ -952,6 +954,455 @@ static void leme_input_handle_set_cursor(struct wl_listener *listener,
   }
 }
 
+static bool leme_input_gesture_natural_scroll(struct leme_server *server,
+                                              struct wlr_input_device *device) {
+  if (device != NULL && wlr_input_device_is_libinput(device)) {
+    struct libinput_device *libinput_device =
+        wlr_libinput_get_device_handle(device);
+
+    if (libinput_device != NULL &&
+        libinput_device_config_scroll_has_natural_scroll(libinput_device)) {
+      return libinput_device_config_scroll_get_natural_scroll_enabled(
+                 libinput_device) != 0;
+    }
+  }
+  return leme_input_pointer_settings(server->config,
+                                     device != NULL ? device->name : NULL)
+      .natural_scroll;
+}
+
+void leme_input_workspace_gesture_reset(struct leme_server *server) {
+  if (server == NULL) {
+    return;
+  }
+  if (!leme_gesture_accel_restore(&server->gesture.accel)) {
+    wlr_log(WLR_ERROR, "%s", "failed to restore gesture pointer acceleration");
+  }
+  server->gesture = (struct leme_workspace_gesture_state){0};
+}
+
+void leme_input_workspace_gesture_cancel(struct leme_server *server) {
+  struct leme_output *output;
+  bool was_engaged;
+
+  if (server == NULL) {
+    return;
+  }
+  const bool was_active = server->gesture.active;
+  output = server->gesture.output;
+  was_engaged = server->gesture.engaged;
+
+  leme_input_workspace_gesture_reset(server);
+
+  if (output != NULL && was_engaged && output->workspace_transition != NULL) {
+    leme_render_workspace_transition_finish(output);
+  }
+  if (was_active && server->started && server->scene != NULL) {
+    leme_view_refresh_tag_focus(server);
+  }
+}
+
+static void leme_input_handle_swipe_begin(struct wl_listener *listener,
+                                          void *data) {
+  struct leme_server *server =
+      wl_container_of(listener, server, cursor_swipe_begin);
+  struct wlr_pointer_swipe_begin_event *event = data;
+  struct leme_output *output;
+  struct wlr_input_device *device;
+  struct libinput_device *libinput_device = NULL;
+  bool natural_scroll;
+  uint16_t focused_id;
+  double initial_pos;
+  uint16_t ring[LEME_TAGS_RING_MAX];
+  size_t ring_count = 0;
+  size_t center_index;
+  bool is_takeover;
+
+  if (server == NULL || server->config == NULL || event == NULL) {
+    return;
+  }
+  if (server->config->gestures.workspace_switch.fingers == 0 ||
+      event->fingers != server->config->gestures.workspace_switch.fingers) {
+    return;
+  }
+
+  const enum leme_workspace_gesture_mode mode =
+      server->config->gestures.workspace_switch.mode;
+  leme_input_workspace_gesture_cancel(server);
+
+  if (leme_input_pointer_grab_active(server) || leme_session_locked(server)) {
+    return;
+  }
+  output = leme_output_focused(server);
+  if (output == NULL || leme_output_tags(output) == NULL ||
+      output->wlr_output == NULL || !output->wlr_output->enabled) {
+    return;
+  }
+
+  device = event->pointer != NULL ? &event->pointer->base : NULL;
+  natural_scroll = leme_input_gesture_natural_scroll(server, device);
+  focused_id = leme_output_tags(output)->focused_id;
+  initial_pos = leme_tags_position(leme_output_tags(output));
+
+  is_takeover = (output->workspace_transition != NULL &&
+                 leme_render_workspace_transition_active(output));
+
+  if (is_takeover &&
+      !leme_render_workspace_transition_presented_position(output, &initial_pos)) {
+    leme_render_workspace_transition_finish(output);
+    is_takeover = false;
+    initial_pos = leme_tags_position(leme_output_tags(output));
+  }
+  if (is_takeover) {
+    size_t tr_count = 0;
+    const uint16_t *tr_ring =
+        leme_render_workspace_transition_ring(output, &tr_count);
+    if (tr_ring != NULL && tr_count >= 2 && tr_count <= LEME_TAGS_RING_MAX) {
+      memcpy(ring, tr_ring, tr_count * sizeof(uint16_t));
+      ring_count = tr_count;
+    }
+  }
+  if (ring_count == 0) {
+    ring_count = leme_tags_ring(leme_output_tags(output),
+                                LEME_TAG_CHANGE_FORWARD, ring,
+                                LEME_ARRAY_LENGTH(ring));
+  }
+  if (ring_count < 2 || ring_count > LEME_TAGS_RING_MAX) {
+    return;
+  }
+
+  center_index = ring_count;
+  for (size_t i = 0; i < ring_count; i++) {
+    if (ring[i] == focused_id) {
+      center_index = i;
+      break;
+    }
+  }
+  if (center_index >= ring_count) {
+    return;
+  }
+
+  const double count = (double)ring_count;
+  const double index = (double)center_index;
+  double center_pos = index + count * round((initial_pos - index) / count);
+
+  if (is_takeover &&
+      ((mode == LEME_WORKSPACE_GESTURE_SINGLE &&
+        fabs(initial_pos - center_pos) > 1.0) ||
+       !leme_render_workspace_transition_set_gesture_range(
+           output, mode == LEME_WORKSPACE_GESTURE_SINGLE,
+           center_pos - 1.0, center_pos + 1.0))) {
+    leme_render_workspace_transition_finish(output);
+    is_takeover = false;
+    focused_id = leme_output_tags(output)->focused_id;
+    initial_pos = leme_tags_position(leme_output_tags(output));
+    ring_count = leme_tags_ring(leme_output_tags(output),
+                                LEME_TAG_CHANGE_FORWARD, ring,
+                                LEME_ARRAY_LENGTH(ring));
+    if (ring_count < 2 || ring_count > LEME_TAGS_RING_MAX) {
+      return;
+    }
+    center_index = ring_count;
+    for (size_t i = 0; i < ring_count; i++) {
+      if (ring[i] == focused_id) {
+        center_index = i;
+        break;
+      }
+    }
+    if (center_index >= ring_count) {
+      return;
+    }
+    center_pos = (double)center_index + (double)ring_count *
+        round((initial_pos - (double)center_index) / (double)ring_count);
+  }
+
+  leme_session_notify_activity(server);
+
+  server->gesture.mode = mode;
+  server->gesture.active = true;
+  server->gesture.engaged = is_takeover;
+  server->gesture.pointer = event->pointer;
+  server->gesture.output = output;
+  server->gesture.natural_scroll = natural_scroll;
+  server->gesture.initial_position = initial_pos;
+  server->gesture.center_position = center_pos;
+  server->gesture.initial_tag_id = focused_id;
+  server->gesture.displacement = 0.0;
+  server->gesture.dx_accum = 0.0;
+  server->gesture.dy_accum = 0.0;
+  memcpy(server->gesture.ring, ring, ring_count * sizeof(uint16_t));
+  server->gesture.ring_count = ring_count;
+
+  leme_swipe_tracker_init(
+      &server->gesture.tracker,
+      server->config->gestures.workspace_switch.velocity_window_ms,
+      server->config->gestures.workspace_switch.deceleration);
+
+  if (device != NULL && wlr_input_device_is_libinput(device)) {
+    libinput_device = wlr_libinput_get_device_handle(device);
+  }
+  if (libinput_device != NULL) {
+    (void)leme_gesture_accel_begin(&server->gesture.accel, libinput_device);
+  }
+
+  if (is_takeover) {
+    leme_animation_manager_cancel_data(&server->animations,
+                                       output->workspace_transition);
+    leme_render_workspace_transition_begin_gesture(
+        output->workspace_transition);
+    /* Bounds were adopted before acquiring input/animation ownership. */
+  }
+}
+
+static void leme_input_handle_swipe_update(struct wl_listener *listener,
+                                           void *data) {
+  struct leme_server *server =
+      wl_container_of(listener, server, cursor_swipe_update);
+  struct wlr_pointer_swipe_update_event *event = data;
+  struct leme_output *output;
+  const struct leme_workspace_switch_gesture_settings *settings;
+  double effective_dx;
+
+  if (server == NULL || !server->gesture.active || event == NULL) {
+    return;
+  }
+  if (server->gesture.pointer != NULL && event->pointer != NULL &&
+      event->pointer != server->gesture.pointer) {
+    return;
+  }
+  if (!isfinite(event->dx) || !isfinite(event->dy)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  leme_session_notify_activity(server);
+  output = server->gesture.output;
+  if (output == NULL || output != leme_output_focused(server) ||
+      leme_output_tags(output) == NULL || leme_session_locked(server)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  settings = &server->config->gestures.workspace_switch;
+  if (settings->distance <= 0.0 || !isfinite(settings->distance)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  effective_dx = server->gesture.natural_scroll ? -event->dx : event->dx;
+
+  if (!server->gesture.engaged) {
+    server->gesture.dx_accum += effective_dx;
+    server->gesture.dy_accum += event->dy;
+
+    if (!isfinite(server->gesture.dx_accum) ||
+        !isfinite(server->gesture.dy_accum)) {
+      leme_input_workspace_gesture_cancel(server);
+      return;
+    }
+
+    const double dist = hypot(server->gesture.dx_accum, server->gesture.dy_accum);
+    if (dist < 16.0) {
+      return;
+    }
+
+    if (fabs(server->gesture.dy_accum) >= fabs(server->gesture.dx_accum)) {
+      leme_input_workspace_gesture_reset(server);
+      return;
+    }
+
+    leme_swipe_tracker_reset(&server->gesture.tracker);
+    server->gesture.displacement = 0.0;
+
+    const size_t adjacent_index = (size_t)leme_tags_ring_wrap(
+        server->gesture.center_position + 1.0, server->gesture.ring_count);
+    const uint16_t adj = server->gesture.ring[adjacent_index];
+    struct leme_workspace_transition *transition =
+        leme_render_workspace_transition_prepare_gesture(
+            output, server->gesture.initial_tag_id, adj,
+            LEME_TAG_CHANGE_FORWARD);
+
+    if (transition != NULL) {
+      leme_render_workspace_transition_begin_gesture(transition);
+
+      size_t count = 0;
+      const uint16_t *ring =
+          leme_render_workspace_transition_ring(output, &count);
+      bool ring_matches = (ring != NULL && count == server->gesture.ring_count);
+      if (ring_matches) {
+        for (size_t i = 0; i < count; i++) {
+          if (ring[i] != server->gesture.ring[i]) {
+            ring_matches = false;
+            break;
+          }
+        }
+      }
+      if (!ring_matches) {
+        leme_render_workspace_transition_finish(output);
+        leme_input_workspace_gesture_cancel(server);
+        return;
+      }
+
+      if (!leme_render_workspace_transition_set_gesture_range(
+              output, server->gesture.mode == LEME_WORKSPACE_GESTURE_SINGLE,
+              server->gesture.center_position - 1.0,
+              server->gesture.center_position + 1.0)) {
+        leme_render_workspace_transition_finish(output);
+        leme_input_workspace_gesture_cancel(server);
+        return;
+      }
+    }
+
+    server->gesture.engaged = true;
+  }
+
+  const double delta = effective_dx / settings->distance;
+  const double next_displacement = server->gesture.displacement + delta;
+  const double raw = server->gesture.initial_position + next_displacement;
+
+  if (!isfinite(delta) || !isfinite(next_displacement) || !isfinite(raw) ||
+      (server->gesture.mode != LEME_WORKSPACE_GESTURE_SINGLE &&
+       fabs(raw) > 0x1p52 - 2.0)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  server->gesture.displacement = next_displacement;
+  leme_swipe_tracker_push(&server->gesture.tracker, delta, event->time_msec);
+
+  const double visual = server->gesture.mode == LEME_WORKSPACE_GESTURE_SINGLE ?
+      leme_swipe_position(raw, server->gesture.center_position) : raw;
+  if (output->workspace_transition != NULL) {
+    leme_render_workspace_transition_set_position(output, visual);
+  }
+}
+
+static void leme_input_handle_swipe_end(struct wl_listener *listener,
+                                        void *data) {
+  struct leme_server *server =
+      wl_container_of(listener, server, cursor_swipe_end);
+  struct wlr_pointer_swipe_end_event *event = data;
+  struct leme_output *output;
+  const struct leme_workspace_switch_gesture_settings *settings;
+  uint16_t target_id;
+  size_t target_idx;
+  enum leme_tag_change_direction change_dir;
+
+  if (server == NULL || !server->gesture.active || event == NULL) {
+    return;
+  }
+  if (server->gesture.pointer != NULL && event->pointer != NULL &&
+      event->pointer != server->gesture.pointer) {
+    return;
+  }
+  leme_session_notify_activity(server);
+  output = server->gesture.output;
+  if (output == NULL || output != leme_output_focused(server) ||
+      leme_output_tags(output) == NULL || leme_session_locked(server)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  if (!server->gesture.engaged) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  settings = &server->config->gestures.workspace_switch;
+  leme_swipe_tracker_push(&server->gesture.tracker, 0.0, event->time_msec);
+
+  const double raw =
+      server->gesture.initial_position + server->gesture.displacement;
+  const bool single = server->gesture.mode == LEME_WORKSPACE_GESTURE_SINGLE;
+  double visual = single ?
+      leme_swipe_position(raw, server->gesture.center_position) : raw;
+  if (output->workspace_transition != NULL &&
+      !leme_render_workspace_transition_presented_position(output, &visual)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+  const double projection = leme_swipe_tracker_projected_position(
+      &server->gesture.tracker, raw, event->time_msec);
+  const double velocity = event->cancelled ? 0.0 :
+      leme_swipe_tracker_velocity(&server->gesture.tracker, event->time_msec) *
+      (single ? leme_swipe_position_derivative(raw, server->gesture.center_position) : 1.0);
+  const bool forward = projection >= server->gesture.initial_position;
+  bool bounded = single;
+  double minimum = server->gesture.center_position - 1.0;
+  double maximum = server->gesture.center_position + 1.0;
+  double target = NAN;
+  if (event->cancelled) {
+    target = server->gesture.center_position;
+    if (!single && server->gesture.ring_count >= 2) {
+      const double count = (double)server->gesture.ring_count;
+      target += count * round((visual - target) / count);
+    }
+  } else {
+    switch (server->gesture.mode) {
+    case LEME_WORKSPACE_GESTURE_SINGLE:
+      target = leme_swipe_target(projection, server->gesture.center_position,
+                                 settings->threshold);
+      break;
+    case LEME_WORKSPACE_GESTURE_SCRUB:
+      bounded = true;
+      minimum = floor(visual);
+      maximum = ceil(visual);
+      target = leme_swipe_continuous_target(
+          fmax(minimum, fmin(projection, maximum)), settings->threshold, forward);
+      break;
+    case LEME_WORKSPACE_GESTURE_FREE:
+      target = leme_swipe_continuous_target(projection, settings->threshold, forward);
+      break;
+    }
+  }
+
+  if (!isfinite(visual) || !isfinite(projection) ||
+      !isfinite(target) || !isfinite(velocity)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  if (server->gesture.ring_count < 2) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  target_idx = (size_t)leme_tags_ring_wrap(target, server->gesture.ring_count);
+  if (target_idx >= server->gesture.ring_count) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+  target_id = server->gesture.ring[target_idx];
+
+  if (output->workspace_transition != NULL &&
+      !leme_render_workspace_transition_set_gesture_range(
+          output, bounded, minimum, maximum)) {
+    leme_input_workspace_gesture_cancel(server);
+    return;
+  }
+
+  if (target > server->gesture.center_position) {
+    change_dir = LEME_TAG_CHANGE_FORWARD;
+  } else if (target < server->gesture.center_position) {
+    change_dir = LEME_TAG_CHANGE_BACKWARD;
+  } else {
+    change_dir = (visual >= server->gesture.center_position)
+                     ? LEME_TAG_CHANGE_BACKWARD
+                     : LEME_TAG_CHANGE_FORWARD;
+  }
+
+  (void)leme_tags_focus_id_direction(leme_output_tags(output), target_id,
+                                     change_dir);
+
+  struct leme_workspace_transition *transition = output->workspace_transition;
+  leme_input_workspace_gesture_reset(server);
+  leme_view_refresh_tag_focus(server);
+
+  if (transition != NULL) {
+    leme_render_workspace_transition_settle(output, visual, target, velocity);
+  }
+}
+
 void leme_input_pointer_events_init(struct leme_server *server) {
   struct leme_pointer_grab *grab = calloc(1, sizeof(*grab));
 
@@ -974,6 +1425,15 @@ void leme_input_pointer_events_init(struct leme_server *server) {
   wl_signal_add(&server->cursor->events.axis, &server->cursor_axis);
   server->cursor_frame.notify = leme_input_handle_frame;
   wl_signal_add(&server->cursor->events.frame, &server->cursor_frame);
+  server->cursor_swipe_begin.notify = leme_input_handle_swipe_begin;
+  wl_signal_add(&server->cursor->events.swipe_begin,
+                &server->cursor_swipe_begin);
+  server->cursor_swipe_update.notify = leme_input_handle_swipe_update;
+  wl_signal_add(&server->cursor->events.swipe_update,
+                &server->cursor_swipe_update);
+  server->cursor_swipe_end.notify = leme_input_handle_swipe_end;
+  wl_signal_add(&server->cursor->events.swipe_end,
+                &server->cursor_swipe_end);
   server->request_set_cursor.notify = leme_input_handle_set_cursor;
   wl_signal_add(&server->seat->events.request_set_cursor,
                 &server->request_set_cursor);
@@ -983,6 +1443,7 @@ void leme_input_pointers_finish(struct leme_server *server) {
   struct leme_pointer *pointer;
   struct leme_pointer *temporary;
 
+  leme_input_workspace_gesture_cancel(server);
   leme_input_pointer_grab_finish(server);
   free(server->pointer_grab);
   server->pointer_grab = NULL;
@@ -997,5 +1458,8 @@ void leme_input_pointers_finish(struct leme_server *server) {
   wl_list_remove(&server->cursor_button.link);
   wl_list_remove(&server->cursor_axis.link);
   wl_list_remove(&server->cursor_frame.link);
+  wl_list_remove(&server->cursor_swipe_begin.link);
+  wl_list_remove(&server->cursor_swipe_update.link);
+  wl_list_remove(&server->cursor_swipe_end.link);
   wl_list_remove(&server->request_set_cursor.link);
 }

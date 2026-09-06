@@ -10,7 +10,6 @@ struct leme_tag;
 struct leme_tags;
 struct leme_view;
 
-/* Reservado para os marcos que definirem restauração concreta. */
 struct leme_view_restore;
 
 enum leme_view_owner_kind {

@@ -312,6 +312,13 @@ static bool leme_config_parse_tags(struct leme_config *config,
         }
         continue;
       }
+      if (value > 64) {
+        if (!leme_config_reject(config, entry, 0,
+                                "maximum cannot exceed 64")) {
+          return false;
+        }
+        continue;
+      }
       config->max_tags = value;
       dir_maximum = entry;
     } else if (strcmp(entry->name, "drop_mode") == 0) {
@@ -981,10 +988,6 @@ leme_config_parse_animation_curve(const struct leme_scfg_directive *entry,
       return false;
     }
   }
-  /*
-   * O x tem de ficar em 0..1: a curva é procurada por bissecção nele. O y
-   * fica livre, para que um sobreimpulso continue a ser configurável.
-   */
   if (points[0] < 0.0 || points[0] > 1.0 || points[2] < 0.0 ||
       points[2] > 1.0) {
     return false;
@@ -1021,18 +1024,173 @@ leme_config_parse_animation_effects(const struct leme_scfg_directive *entry,
   return true;
 }
 
+static bool leme_config_parse_spring(struct leme_config *config,
+                                     const struct leme_scfg_directive *entry,
+                                     enum leme_animation_kind *kind,
+                                     struct leme_animation_spring *out) {
+  struct leme_animation_spring spring = {
+      .damping_ratio = 1.0,
+      .stiffness = 800.0,
+      .epsilon = 0.0001,
+  };
+  const struct leme_scfg_directive *seen[3] = {NULL, NULL, NULL};
+  static const char *const spring_keys[] = {
+      "damping_ratio",
+      "stiffness",
+      "epsilon",
+  };
+  uint32_t settle;
+  size_t child;
+  bool ok = true;
+
+  if (entry->params_len != 0) {
+    if (!leme_config_reject(config, entry, 0, "spring takes no arguments")) {
+      return false;
+    }
+    ok = false;
+  }
+  if (entry->children.directives_len == 0) {
+    const struct leme_reject_extra extra = {
+        .help = "a spring needs damping_ratio, stiffness or epsilon",
+    };
+    if (!leme_config_reject_detailed(config, entry, -1, &extra,
+                                     "spring requires a block")) {
+      return false;
+    }
+    return true;
+  }
+  for (child = 0; child < entry->children.directives_len; child++) {
+    const struct leme_scfg_directive *field =
+        &entry->children.directives[child];
+    double value;
+    size_t key;
+
+    for (key = 0; key < LEME_ARRAY_LENGTH(spring_keys); key++) {
+      if (strcmp(field->name, spring_keys[key]) == 0) {
+        break;
+      }
+    }
+    if (key == LEME_ARRAY_LENGTH(spring_keys)) {
+      if (!leme_config_reject(config, field, -1,
+                              "unknown directive `%s` in `spring`",
+                              field->name)) {
+        return false;
+      }
+      ok = false;
+      continue;
+    }
+    if (seen[key] != NULL) {
+      const struct leme_reject_extra extra = {
+          .secondary = seen[key],
+          .secondary_label = "first defined here",
+      };
+      if (!leme_config_reject_detailed(config, field, -1, &extra,
+                                       "duplicate directive `%s` in `spring`",
+                                       field->name)) {
+        return false;
+      }
+      ok = false;
+      continue;
+    }
+    if (field->params_len != 1 ||
+        !leme_config_parse_decimal(field->params[0], &value)) {
+      if (!leme_config_reject(config, field, -1, "%s expects one decimal",
+                              field->name)) {
+        return false;
+      }
+      ok = false;
+      continue;
+    }
+    seen[key] = field;
+    if (key == 0) {
+      spring.damping_ratio = value;
+    } else if (key == 1) {
+      spring.stiffness = value;
+    } else {
+      spring.epsilon = value;
+    }
+  }
+  if (ok && !(spring.damping_ratio > 0.0)) {
+    const struct leme_reject_extra extra = {
+        .help = "a spring with no damping never settles",
+    };
+    if (!leme_config_reject_detailed(config,
+                                     seen[0] != NULL ? seen[0] : entry,
+                                     seen[0] != NULL ? 0 : -1, &extra,
+                                     "damping_ratio must be greater than zero")) {
+      return false;
+    }
+    ok = false;
+  }
+  if (ok && !(spring.stiffness > 0.0)) {
+    if (!leme_config_reject(config, seen[1] != NULL ? seen[1] : entry,
+                            seen[1] != NULL ? 0 : -1,
+                            "stiffness must be greater than zero")) {
+      return false;
+    }
+    ok = false;
+  }
+  if (ok && !(spring.epsilon > 0.0 && spring.epsilon < 1.0)) {
+    const struct leme_reject_extra extra = {
+        .help = "epsilon is an amplitude, and must sit between 0 and 1",
+    };
+    if (!leme_config_reject_detailed(config,
+                                     seen[2] != NULL ? seen[2] : entry,
+                                     seen[2] != NULL ? 0 : -1, &extra,
+                                     "epsilon must be above 0 and below 1")) {
+      return false;
+    }
+    ok = false;
+  }
+  if (ok && spring.epsilon < 0.000001) {
+    spring.epsilon = 0.000001;
+  }
+  if (!ok) {
+    return true;
+  }
+  settle = leme_animation_spring_duration_ms(&spring, 0.0);
+  if (settle == 0) {
+    if (!leme_config_reject(config, entry, -1,
+                            "these spring parameters never settle")) {
+      return false;
+    }
+    return true;
+  }
+  if (settle > LEME_ANIMATION_DURATION_MAX) {
+    char help[96] = {0};
+    struct leme_reject_extra extra = {0};
+
+    if (snprintf(help, sizeof(help),
+                 "these parameters settle in %ums; raise damping_ratio or "
+                 "stiffness",
+                 settle) > 0) {
+      extra.help = help;
+    }
+    if (!leme_config_reject_detailed(config, entry, -1, &extra,
+                                     "a spring may not settle slower than %ums",
+                                     LEME_ANIMATION_DURATION_MAX)) {
+      return false;
+    }
+    return true;
+  }
+  *kind = LEME_ANIMATION_KIND_SPRING;
+  *out = spring;
+  return true;
+}
+
 static bool
 leme_config_parse_animation_event(struct leme_config *config,
                                   const struct leme_scfg_directive *directive,
                                   struct leme_animation_settings *settings) {
   static const char *const animation_keys[] = {
-      "effect", "curve", "opacity_curve", "duration", "scale_from",
+      "effect", "curve", "opacity_curve", "duration", "scale_from", "spring",
   };
   const struct leme_scfg_directive *dir_duration = NULL;
   const struct leme_scfg_directive *dir_curve = NULL;
   const struct leme_scfg_directive *dir_opacity_curve = NULL;
   const struct leme_scfg_directive *dir_effect = NULL;
   const struct leme_scfg_directive *dir_scale_from = NULL;
+  const struct leme_scfg_directive *dir_spring = NULL;
   size_t index;
 
   settings->duration_ms = 150;
@@ -1040,6 +1198,8 @@ leme_config_parse_animation_event(struct leme_config *config,
   settings->opacity_curve = settings->curve;
   settings->effects = LEME_ANIMATION_EFFECT_FADE;
   settings->scale_from = 0.92;
+  settings->kind = LEME_ANIMATION_KIND_EASING;
+  settings->spring = (struct leme_animation_spring){0};
   for (index = 0; index < directive->children.directives_len; index++) {
     const struct leme_scfg_directive *entry =
         &directive->children.directives[index];
@@ -1047,6 +1207,27 @@ leme_config_parse_animation_event(struct leme_config *config,
     uint32_t effects;
     double decimal;
     int value;
+
+    if (strcmp(entry->name, "spring") == 0) {
+      if (dir_spring != NULL) {
+        const struct leme_reject_extra extra = {
+            .secondary = dir_spring,
+            .secondary_label = "first defined here",
+        };
+        if (!leme_config_reject_detailed(
+                config, entry, -1, &extra,
+                "duplicate directive `spring` in animation event")) {
+          return false;
+        }
+        continue;
+      }
+      dir_spring = entry;
+      if (!leme_config_parse_spring(config, entry, &settings->kind,
+                                    &settings->spring)) {
+        return false;
+      }
+      continue;
+    }
 
     if (entry->children.directives_len != 0) {
       if (!leme_config_reject(config, entry, -1, "%s takes no block",
@@ -1079,10 +1260,6 @@ leme_config_parse_animation_event(struct leme_config *config,
       dir_effect = entry;
       continue;
     }
-    /*
-     * As curvas aceitam quatro parâmetros, por isso passam à frente da
-     * guarda de aridade e tratam a repetição por si.
-     */
     if (strcmp(entry->name, "curve") == 0 ||
         strcmp(entry->name, "opacity_curve") == 0) {
       bool opacity = strcmp(entry->name, "opacity_curve") == 0;
@@ -1204,7 +1381,9 @@ leme_config_parse_animation_event(struct leme_config *config,
   if (dir_opacity_curve == NULL) {
     settings->opacity_curve = settings->curve;
   }
-  settings->configured = settings->duration_ms > 0 && settings->effects != 0;
+  settings->configured = (settings->kind == LEME_ANIMATION_KIND_SPRING ||
+                          settings->duration_ms > 0) &&
+                         settings->effects != 0;
   return true;
 }
 
@@ -1212,13 +1391,13 @@ static bool leme_config_parse_workspace_animation(
     struct leme_config *config, const struct leme_scfg_directive *directive,
     struct leme_workspace_animation_settings *settings) {
   static const char *const workspace_animation_keys[] = {
-      "curve", "opacity_curve", "duration", "style", "distance",
+      "curve", "duration", "style", "distance", "spring",
   };
+  const struct leme_scfg_directive *dir_spring = NULL;
   const struct leme_scfg_directive *dir_duration = NULL;
   const struct leme_scfg_directive *dir_style = NULL;
   const struct leme_scfg_directive *dir_distance = NULL;
   const struct leme_scfg_directive *dir_curve = NULL;
-  const struct leme_scfg_directive *dir_opacity_curve = NULL;
   size_t index;
 
   *settings = (struct leme_workspace_animation_settings){
@@ -1228,7 +1407,6 @@ static bool leme_config_parse_workspace_animation(
       .distance = 0.15,
       .curve = leme_animation_curve_preset(LEME_ANIMATION_CURVE_EASE_OUT),
   };
-  settings->opacity_curve = settings->curve;
   for (index = 0; index < directive->children.directives_len; index++) {
     const struct leme_scfg_directive *entry =
         &directive->children.directives[index];
@@ -1236,6 +1414,26 @@ static bool leme_config_parse_workspace_animation(
     double decimal;
     int value;
 
+    if (strcmp(entry->name, "spring") == 0) {
+      if (dir_spring != NULL) {
+        const struct leme_reject_extra extra = {
+            .secondary = dir_spring,
+            .secondary_label = "first defined here",
+        };
+        if (!leme_config_reject_detailed(
+                config, entry, -1, &extra,
+                "duplicate workspace animation key spring")) {
+          return false;
+        }
+        continue;
+      }
+      dir_spring = entry;
+      if (!leme_config_parse_spring(config, entry, &settings->kind,
+                                    &settings->spring)) {
+        return false;
+      }
+      continue;
+    }
     if (entry->children.directives_len != 0) {
       if (!leme_config_reject(config, entry, -1, "%s takes no block",
                               entry->name)) {
@@ -1243,20 +1441,22 @@ static bool leme_config_parse_workspace_animation(
       }
       continue;
     }
-    if (strcmp(entry->name, "curve") == 0 ||
-        strcmp(entry->name, "opacity_curve") == 0) {
-      const bool opacity = strcmp(entry->name, "opacity_curve") == 0;
-      const struct leme_scfg_directive *dir_curv =
-          opacity ? dir_opacity_curve : dir_curve;
-
-      if (dir_curv != NULL) {
+    if (strcmp(entry->name, "opacity_curve") == 0) {
+      if (!leme_config_reject(
+              config, entry, -1,
+              "opacity_curve is not supported in workspace animation; opacity follows transition travel")) {
+        return false;
+      }
+      continue;
+    }
+    if (strcmp(entry->name, "curve") == 0) {
+      if (dir_curve != NULL) {
         const struct leme_reject_extra extra = {
-            .secondary = dir_curv,
+            .secondary = dir_curve,
             .secondary_label = "first defined here",
         };
         if (!leme_config_reject_detailed(config, entry, -1, &extra,
-                                         "duplicate workspace animation key %s",
-                                         entry->name)) {
+                                         "duplicate workspace animation key curve")) {
           return false;
         }
         continue;
@@ -1273,13 +1473,8 @@ static bool leme_config_parse_workspace_animation(
         }
         continue;
       }
-      if (opacity) {
-        settings->opacity_curve = curve;
-        dir_opacity_curve = entry;
-      } else {
-        settings->curve = curve;
-        dir_curve = entry;
-      }
+      settings->curve = curve;
+      dir_curve = entry;
       continue;
     }
     if (entry->params_len != 1) {
@@ -1392,10 +1587,9 @@ static bool leme_config_parse_workspace_animation(
       }
     }
   }
-  if (dir_opacity_curve == NULL) {
-    settings->opacity_curve = settings->curve;
-  }
-  settings->configured = settings->duration_ms > 0;
+  settings->opacity_curve = settings->curve;
+  settings->configured =
+      settings->kind == LEME_ANIMATION_KIND_SPRING || settings->duration_ms > 0;
   return true;
 }
 
@@ -2138,6 +2332,224 @@ leme_config_parse_cursor(struct leme_config *config,
       }
       if (!leme_config_reject_detailed(config, entry, -1, &extra,
                                        "unknown cursor property %s",
+                                       entry->name)) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static bool leme_config_parse_workspace_switch_gesture(
+    struct leme_config *config, const struct leme_scfg_directive *directive,
+    struct leme_workspace_switch_gesture_settings *settings) {
+  static const char *const gesture_keys[] = {
+      "fingers",
+      "distance",
+      "threshold",
+      "deceleration",
+      "velocity_window",
+      "mode",
+  };
+  const struct leme_scfg_directive *seen[LEME_ARRAY_LENGTH(gesture_keys)] = {0};
+  size_t index;
+
+  if (directive->params_len != 0) {
+    if (!leme_config_reject(config, directive, 0,
+                            "workspace_switch block takes no parameters")) {
+      return false;
+    }
+  }
+  for (index = 0; index < directive->children.directives_len; index++) {
+    const struct leme_scfg_directive *entry =
+        &directive->children.directives[index];
+    size_t key;
+
+    for (key = 0; key < LEME_ARRAY_LENGTH(gesture_keys); key++) {
+      if (strcmp(entry->name, gesture_keys[key]) == 0) {
+        break;
+      }
+    }
+    if (key == LEME_ARRAY_LENGTH(gesture_keys)) {
+      const char *nearest = leme_config_nearest_key(
+          entry->name, gesture_keys, LEME_ARRAY_LENGTH(gesture_keys));
+      char help_buf[128] = {0};
+      struct leme_reject_extra extra = {0};
+
+      if (nearest != NULL) {
+        snprintf(help_buf, sizeof(help_buf),
+                 "a directive with a similar name exists: `%s`", nearest);
+        extra.help = help_buf;
+      }
+      if (!leme_config_reject_detailed(config, entry, -1, &extra,
+                                       "unknown workspace_switch property %s",
+                                       entry->name)) {
+        return false;
+      }
+      continue;
+    }
+    if (entry->children.directives_len != 0) {
+      if (!leme_config_reject(config, entry, -1, "%s takes no block",
+                              entry->name)) {
+        return false;
+      }
+      continue;
+    }
+    if (seen[key] != NULL) {
+      const struct leme_reject_extra extra = {
+          .secondary = seen[key],
+          .secondary_label = "first defined here",
+      };
+      if (!leme_config_reject_detailed(config, entry, -1, &extra,
+                                       "duplicate workspace_switch property %s",
+                                       entry->name)) {
+        return false;
+      }
+      continue;
+    }
+    if (entry->params_len != 1) {
+      if (!leme_config_reject(config, entry, -1,
+                              "%s requires one value", entry->name)) {
+        return false;
+      }
+      continue;
+    }
+    seen[key] = entry;
+    if (key == 0) {
+      int value;
+      if (!leme_config_parse_nonnegative(entry->params[0], &value)) {
+        if (!leme_config_reject(config, entry, 0,
+                                "fingers expects an integer")) {
+          return false;
+        }
+        continue;
+      }
+      if (value == 2) {
+        if (!leme_config_reject(config, entry, 0,
+                                "libinput does not deliver two-finger swipes")) {
+          return false;
+        }
+        continue;
+      }
+      if (value == 1) {
+        if (!leme_config_reject(config, entry, 0,
+                                "fingers must be 0 or at least 3")) {
+          return false;
+        }
+        continue;
+      }
+      settings->fingers = (uint32_t)value;
+    } else if (key == 1) {
+      double decimal;
+      if (!leme_config_parse_decimal(entry->params[0], &decimal) ||
+          decimal <= 0.0) {
+        if (!leme_config_reject(config, entry, 0,
+                                "distance must be greater than zero")) {
+          return false;
+        }
+        continue;
+      }
+      settings->distance = decimal;
+    } else if (key == 2) {
+      double decimal;
+      if (!leme_config_parse_decimal(entry->params[0], &decimal) ||
+          !(decimal > 0.0 && decimal < 1.0)) {
+        if (!leme_config_reject(config, entry, 0,
+                                "threshold must be between 0 and 1")) {
+          return false;
+        }
+        continue;
+      }
+      settings->threshold = decimal;
+    } else if (key == 3) {
+      double decimal;
+      if (!leme_config_parse_decimal(entry->params[0], &decimal) ||
+          !(decimal > 0.0 && decimal < 1.0)) {
+        if (!leme_config_reject(config, entry, 0,
+                                "deceleration must be between 0 and 1")) {
+          return false;
+        }
+        continue;
+      }
+      settings->deceleration = decimal;
+    } else if (key == 4) {
+      int value;
+      if (!leme_config_parse_nonnegative(entry->params[0], &value) ||
+          value <= 0) {
+        if (!leme_config_reject(config, entry, 0,
+                                "velocity_window must be greater than zero")) {
+          return false;
+        }
+        continue;
+      }
+      settings->velocity_window_ms = (uint32_t)value;
+    } else if (key == 5) {
+      if (strcmp(entry->params[0], "single") == 0) {
+        settings->mode = LEME_WORKSPACE_GESTURE_SINGLE;
+      } else if (strcmp(entry->params[0], "scrub") == 0) {
+        settings->mode = LEME_WORKSPACE_GESTURE_SCRUB;
+      } else if (strcmp(entry->params[0], "free") == 0) {
+        settings->mode = LEME_WORKSPACE_GESTURE_FREE;
+      } else if (!leme_config_reject(config, entry, 0,
+                                     "mode expects single, scrub, or free")) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+static bool
+leme_config_parse_gestures(struct leme_config *config,
+                           const struct leme_scfg_directive *directive,
+                           const char *path, char **error) {
+  static const char *const gesture_blocks[] = {
+      "workspace_switch",
+  };
+  const struct leme_scfg_directive *dir_workspace_switch = NULL;
+  size_t index;
+
+  if (directive->params_len != 0) {
+    leme_config_set_error(error, "%s:%d: gestures block takes no parameters",
+                          path, directive->lineno);
+    return false;
+  }
+  for (index = 0; index < directive->children.directives_len; index++) {
+    const struct leme_scfg_directive *entry =
+        &directive->children.directives[index];
+
+    if (strcmp(entry->name, "workspace_switch") == 0) {
+      if (dir_workspace_switch != NULL) {
+        const struct leme_reject_extra extra = {
+            .secondary = dir_workspace_switch,
+            .secondary_label = "first defined here",
+        };
+        if (!leme_config_reject_detailed(
+                config, entry, -1, &extra,
+                "duplicate gestures property workspace_switch")) {
+          return false;
+        }
+        continue;
+      }
+      dir_workspace_switch = entry;
+      if (!leme_config_parse_workspace_switch_gesture(
+              config, entry, &config->gestures.workspace_switch)) {
+        return false;
+      }
+    } else {
+      const char *nearest = leme_config_nearest_key(
+          entry->name, gesture_blocks,
+          sizeof(gesture_blocks) / sizeof(gesture_blocks[0]));
+      char help_buf[128] = {0};
+      struct leme_reject_extra extra = {0};
+
+      if (nearest != NULL) {
+        snprintf(help_buf, sizeof(help_buf),
+                 "a directive with a similar name exists: `%s`", nearest);
+        extra.help = help_buf;
+      }
+      if (!leme_config_reject_detailed(config, entry, -1, &extra,
+                                       "unknown gestures property %s",
                                        entry->name)) {
         return false;
       }
@@ -3656,10 +4068,6 @@ bool leme_config_drop_invalid_binds(struct leme_config *config) {
   return true;
 }
 
-/*
- * Junta todos os erros de sintaxe numa só mensagem. Recuperar serve para
- * relatar tudo de uma vez; a configuração continua recusada.
- */
 static void leme_config_report_syntax(const struct leme_scfg_source *source,
                                       const char *path,
                                       const struct leme_scfg_result *parsed,
@@ -3730,6 +4138,7 @@ struct leme_config *leme_config_load(const char *path, char **error) {
   bool have_keyboard = false;
   bool have_output_policy = false;
   bool have_cursor = false;
+  bool have_gestures = false;
   bool have_publication = false;
   bool have_config_errors = false;
   bool have_global_pointer = false;
@@ -3756,6 +4165,15 @@ struct leme_config *leme_config_load(const char *path, char **error) {
   };
   config->drop_mode = LEME_DROP_MODE_SIMPLE;
   config->cursor.size = LEME_CURSOR_SIZE_DEFAULT;
+  config->gestures.workspace_switch =
+      (struct leme_workspace_switch_gesture_settings){
+          .mode = LEME_WORKSPACE_GESTURE_SINGLE,
+          .fingers = 3,
+          .distance = 300.0,
+          .threshold = 0.5,
+          .deceleration = 0.997,
+          .velocity_window_ms = 150,
+      };
   config->publication.activation = LEME_ACTIVATION_FOLLOW;
   leme_config_set_style_defaults(config);
   leme_config_set_output_defaults(config);
@@ -3819,6 +4237,9 @@ struct leme_config *leme_config_load(const char *path, char **error) {
     } else if (strcmp(directive->name, "cursor") == 0 && !have_cursor) {
       have_cursor = true;
       valid = leme_config_parse_cursor(config, directive, path, error);
+    } else if (strcmp(directive->name, "gestures") == 0 && !have_gestures) {
+      have_gestures = true;
+      valid = leme_config_parse_gestures(config, directive, path, error);
     } else if (strcmp(directive->name, "publication") == 0 &&
                !have_publication) {
       have_publication = true;

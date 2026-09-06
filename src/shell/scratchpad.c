@@ -558,7 +558,6 @@ bool leme_scratchpad_send(struct leme_server *server, struct leme_view *view) {
     view->box = view->saved_box;
     leme_view_ack_fullscreen(view, false);
   }
-  /* commit_started: a cauda de posse e desenho não pode falhar. */
   leme_scratchpad_transition_commit_started(server);
   leme_capture_invalidate_view(view);
   leme_ownership_commit(&transition);
@@ -612,8 +611,6 @@ leme_scratchpad_claim_tagged(struct leme_scratchpad_manager *manager,
     view->box = view->saved_box;
     leme_view_ack_fullscreen(view, false);
   }
-  /* commit_started: a reclamação e toda a preparação do desligar estão
-   * concluídas. */
   leme_scratchpad_transition_commit_started(server);
   leme_ownership_commit(&transition);
   view->scratchpad_name = claim;
@@ -754,7 +751,6 @@ bool leme_scratchpad_retrieve(struct leme_server *server,
       destination->output);
   leme_render_view_finish_animation(view);
   leme_input_pointer_grab_cancel_view(view);
-  /* commit_started: ligar ao flutuante não aloca nem reporta falhas. */
   leme_scratchpad_transition_commit_started(server);
   leme_scratchpad_unlink(view);
   if (manager->shown == view) {

@@ -5,6 +5,9 @@
 #include "config/config.h"
 #include "shell/scratchpad.h"
 #include "shell/sticky.h"
+#include "input/swipe_tracker.h"
+#include "input/gesture_accel.h"
+#include "workspace/tag.h"
 
 #include <wayland-server-core.h>
 #include <wlr/backend.h>
@@ -28,6 +31,26 @@ struct leme_session;
 struct leme_tearing;
 struct leme_view;
 struct leme_tags;
+struct wlr_pointer;
+
+struct leme_workspace_gesture_state {
+  enum leme_workspace_gesture_mode mode;
+  bool active;
+  bool engaged;
+  bool natural_scroll;
+  double dx_accum; /* recognition only */
+  double dy_accum; /* recognition only */
+  double displacement; /* raw engaged travel, in tags */
+  double initial_position; /* unwrapped visual baseline */
+  double center_position; /* integer focused-tag coordinate */
+  uint16_t initial_tag_id;
+  uint16_t ring[LEME_TAGS_RING_MAX];
+  size_t ring_count;
+  struct leme_swipe_tracker tracker;
+  struct leme_gesture_accel accel;
+  struct wlr_pointer *pointer; /* borrowed; cleared by device-destroy cleanup */
+  struct leme_output *output; /* borrowed; cleared before output destruction */
+};
 struct wlr_alpha_modifier_v1;
 struct wlr_compositor;
 struct wlr_content_type_manager_v1;
@@ -125,6 +148,10 @@ struct leme_server {
   struct wl_listener cursor_axis;
   struct wl_listener cursor_frame;
   struct wl_listener request_set_cursor;
+  struct wl_listener cursor_swipe_begin;
+  struct wl_listener cursor_swipe_update;
+  struct wl_listener cursor_swipe_end;
+  struct leme_workspace_gesture_state gesture;
   struct wl_listener new_output;
   struct wl_listener output_manager_apply;
   struct wl_listener output_manager_test;

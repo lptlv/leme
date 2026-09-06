@@ -47,5 +47,7 @@ void leme_input_pointer_grab_cancel(struct leme_server *server);
 void leme_input_pointer_grab_cancel_tiled(struct leme_server *server);
 void leme_input_pointer_grab_cancel_view(struct leme_view *view);
 void leme_input_pointer_grab_finish(struct leme_server *server);
+void leme_input_workspace_gesture_reset(struct leme_server *server);
+void leme_input_workspace_gesture_cancel(struct leme_server *server);
 
 #endif
