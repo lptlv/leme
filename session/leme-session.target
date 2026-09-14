@@ -4,5 +4,6 @@ Documentation=man:systemd.special(7)
 BindsTo=graphical-session.target
 Requires=graphical-session.target
 Wants=xdg-desktop-portal.service
+After=xdg-desktop-portal.service
 Wants=graphical-session-pre.target
 After=graphical-session-pre.target
