@@ -164,6 +164,10 @@ install_data(
   'session/leme-portals.conf',
   install_dir: get_option('datadir') / 'xdg-desktop-portal',
 )
+install_data(
+  'session/leme-session.target',
+  install_dir: get_option('libdir') / 'systemd' / 'user',
+)
 
 fs = import('fs')
 if fs.is_dir('.dev/tests')
