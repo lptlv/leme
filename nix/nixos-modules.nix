@@ -9,8 +9,7 @@ let
   cfg = config.programs.leme;
 in
 {
-  # in case this gets added to nixpkgs, uncomment:
-  # disabledModules = [ "programs/wayland/leme.nix" ];
+  disabledModules = [ "programs/wayland/leme.nix" ];
 
   options = {
     programs.leme = {
@@ -37,16 +36,20 @@ in
       enable = lib.mkDefault true;
 
       config = {
-        leme = {
-          default = [
-            "gtk"
-          ];
-          "org.freedesktop.impl.portal.ScreenCast" = [ "wlr" ];
-          "org.freedesktop.impl.portal.Screenshot" = [ "wlr" ];
-        };
-      };
+	      leme = {
+	        default = [ "luminous" "gtk" ];
+	        "org.freedesktop.impl.portal.Settings" = [ "luminous" "gtk" ];
+	        "org.freedesktop.impl.portal.ScreenCast" = [ "luminous" ];
+          "org.freedesktop.impl.portal.Screenshot" = [ "luminous" ];
+	        "org.freedesktop.impl.portal.Clipboard" = [ "luminous" ];
+	        "org.freedesktop.impl.portal.Usb" = [ "luminous" ];
+	        "org.freedesktop.impl.portal.RemoteDesktop" = [ "luminous" ];
+	        "org.freedesktop.impl.portal.Background" = [ "luminous" ];
+	      };
+	  };
       extraPortals = with pkgs; [
-        xdg-desktop-portal-wlr
+		    xdg-desktop-portal
+        xdg-desktop-portal-luminous
         xdg-desktop-portal-gtk
       ];
       wlr.enable = lib.mkDefault true;
