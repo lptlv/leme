@@ -48,6 +48,7 @@ in
 	      };
 	  };
       extraPortals = with pkgs; [
+		xdg-desktop-portal
         xdg-desktop-portal-luminous
         xdg-desktop-portal-gtk
       ];
