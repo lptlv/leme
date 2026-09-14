@@ -81,6 +81,7 @@ static bool leme_session_environment_run(const char *display) {
   static char leme_socket[] = "LEME_SOCKET";
   static char cursor_size[] = "XCURSOR_SIZE";
   static char cursor_theme[] = "XCURSOR_THEME";
+
   char *arguments[12];
   size_t count = 0;
   pid_t process;
@@ -124,6 +125,13 @@ static bool leme_session_environment_run(const char *display) {
 void leme_session_environment_publish(struct leme_server *server) {
   const char *bus;
   const char *display;
+
+  char *target string_printf("systemctl --user %s %s; "
+                             "systemctl --user --no-block start "
+                             "leme-session.target",
+                            );
+  spawn_shell(&(Arg){.v = target});
+	free(target);
 
   if (server == NULL || server->session == NULL) {
     return;
