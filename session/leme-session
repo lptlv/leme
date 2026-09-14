@@ -37,5 +37,5 @@ if [ -n "$leme_log" ] && [ "$leme_log" != none ]; then
     fi
 fi
 
-exec leme "$@"
 systemctl --user --no-block start leme-session.target
+exec leme "$@"
