@@ -126,11 +126,6 @@ void leme_session_environment_publish(struct leme_server *server) {
   const char *bus;
   const char *display;
 
-  spawn_shell((String) {
-    .v = "systemctl --user --no-block start leme-session.target"
-  });
-
-
   if (server == NULL || server->session == NULL) {
     return;
   }
