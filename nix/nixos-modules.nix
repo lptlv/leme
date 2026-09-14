@@ -9,8 +9,7 @@ let
   cfg = config.programs.leme;
 in
 {
-  # in case this gets added to nixpkgs, uncomment:
-  # disabledModules = [ "programs/wayland/leme.nix" ];
+  disabledModules = [ "programs/wayland/leme.nix" ];
 
   options = {
     programs.leme = {
@@ -38,16 +37,16 @@ in
 
       config = {
 	      leme = {
-	        default = [ "luminous:gtk" ];
-	        "org.freedesktop.impl.portal.Settings" = [ "luminous;gtk" ];
+	        default = [ "luminous" "gtk" ];
+	        "org.freedesktop.impl.portal.Settings" = [ "luminous" "gtk" ];
 	        "org.freedesktop.impl.portal.ScreenCast" = [ "luminous" ];
-          "org.freedesktop.impl.portal.Screenshot" = [ "luminous" ];
+            "org.freedesktop.impl.portal.Screenshot" = [ "luminous" ];
 	        "org.freedesktop.impl.portal.Clipboard" = [ "luminous" ];
 	        "org.freedesktop.impl.portal.Usb" = [ "luminous" ];
 	        "org.freedesktop.impl.portal.RemoteDesktop" = [ "luminous" ];
 	        "org.freedesktop.impl.portal.Background" = [ "luminous" ];
 	      };
-	    }
+	  };
       extraPortals = with pkgs; [
         xdg-desktop-portal-luminous
         xdg-desktop-portal-gtk
